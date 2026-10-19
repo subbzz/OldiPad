@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="YouTube">
+  <title>YouTube</title>
+  <link rel="apple-touch-icon" href="icons/youtube.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="index.html">Launcher</a>
+    <header>
+      <h1>YouTube</h1>
+      <p>The App Store app no longer updates on iOS 12. Use the mobile site, or paste a link below.</p>
+    </header>
+
+    <button type="button" class="btn btn-block btn-red" id="open-youtube">Open YouTube</button>
+
+    <div class="panel">
+      <h2>Search</h2>
+      <form id="search-form" action="https://m.youtube.com/results" method="get">
+        <label for="q">Find a video</label>
+        <div class="row">
+          <input id="q" name="search_query" type="search" placeholder="Search YouTube" autocorrect="off">
+          <button type="submit">Go</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Play a link</h2>
+      <form id="play-form" action="#">
+        <label for="url">Paste a youtube.com or youtu.be URL</label>
+        <div class="row">
+          <input id="url" type="url" placeholder="https://youtu.be/..." autocorrect="off" autocapitalize="off">
+          <button type="submit">Play</button>
+        </div>
+        <p id="url-error" class="error hidden"></p>
+      </form>
+      <div id="player-wrap" class="player-wrap hidden">
+        <iframe id="player" title="YouTube video" allowfullscreen></iframe>
+      </div>
+    </div>
+
+    <p class="note links">Share &rarr; Add to Home Screen to keep this as an app. The home-screen profile can also pin <a href="https://m.youtube.com">m.youtube.com</a> directly.</p>
+  </div>
+  <script src="js/youtube.js"></script>
+</body>
+</html>

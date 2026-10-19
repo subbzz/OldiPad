@@ -1,0 +1,205 @@
+/* Safari 12 / iOS 12.5.7 — no flex gap, no CSS that needs Safari 13+ */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background: #e8edf3;
+  color: #1c1c1e;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+  padding-top: calc(20px + constant(safe-area-inset-top));
+  padding-top: calc(20px + env(safe-area-inset-top));
+}
+
+header h1 {
+  font-size: 28px;
+  line-height: 1.2;
+  margin: 0 0 6px;
+  font-weight: 700;
+}
+
+header p {
+  margin: 0 0 20px;
+  color: #3a3a3c;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-gap: 18px 12px;
+}
+
+.tile {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  color: #1c1c1e;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.08);
+}
+
+.tile img {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  display: block;
+  margin: 0 auto 8px;
+}
+
+.tile span {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.panel {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+input[type="search"],
+input[type="url"],
+input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px; /* iOS will zoom if smaller */
+  padding: 12px;
+  border: 1px solid #c7c7cc;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.row {
+  display: -webkit-flex;
+  display: flex;
+}
+
+.row input {
+  -webkit-flex: 1;
+  flex: 1;
+  margin-right: 8px;
+  margin-bottom: 0;
+}
+
+button,
+.btn {
+  display: inline-block;
+  box-sizing: border-box;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  color: #fff;
+  background: #007aff;
+  border: 0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  min-height: 48px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.btn-block {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+}
+
+.btn-green {
+  background: #25d366;
+}
+
+.btn-red {
+  background: #e11d2e;
+}
+
+.note {
+  font-size: 15px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+
+.note.warn {
+  background: #fff4cc;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+ol.steps {
+  margin: 0;
+  padding-left: 22px;
+}
+
+ol.steps li {
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.player-wrap {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.player-wrap iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.links a {
+  color: #007aff;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: #007aff;
+  text-decoration: none;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.hidden {
+  display: none;
+}
+
+.error {
+  color: #c41e3a;
+  font-size: 15px;
+  margin: 8px 0 0;
+}

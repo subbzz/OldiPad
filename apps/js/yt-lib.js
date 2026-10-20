@@ -171,8 +171,10 @@ var YTU = (function () {
     return match ? match[1] : null;
   }
 
+  // mqdefault (320x180) instead of hqdefault (480x360): a third of the memory per
+  // card, which matters on a 1 GB iPad.
   function thumbUrl(id) {
-    return "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
+    return "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg";
   }
 
   function avatarInto(node, name, url, index) {

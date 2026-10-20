@@ -149,13 +149,6 @@ body.yt-app {
   background: #000;
 }
 
-body.watching:not(.mini) .yt-player {
-  position: -webkit-sticky;
-  position: sticky;
-  top: 0;
-  z-index: 35;
-}
-
 .yt-player iframe,
 .yt-player video {
   position: absolute;
@@ -616,11 +609,6 @@ body.watching:not(.mini) .yt-suggest {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   padding: 10px 8px;
-  position: -webkit-sticky;
-  position: sticky;
-  top: 48px;
-  top: calc(48px + env(safe-area-inset-top));
-  z-index: 30;
   background: #fff;
 }
 
@@ -1232,7 +1220,6 @@ body.mini .yt-watch {
   height: 64px;
   background: #fff;
   border-top: 1px solid #e5e5e5;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
 }
 
 body.mini .yt-watch-stage,
@@ -1385,7 +1372,6 @@ body.shorts-mode .yt-status {
   z-index: 3;
   min-height: 80px;
   color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 
 .yt-shorts-author {

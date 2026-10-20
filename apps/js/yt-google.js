@@ -475,7 +475,7 @@ var YTG = (function () {
           for (var v = 0; v < videos.length; v++) {
             videos[v].avatar = avatars[videos[v].channelId] || "";
           }
-          var result = { channels: subs, videos: videos.slice(0, 80) };
+          var result = { channels: subs, videos: videos.slice(0, 40) };
           YTU.cachePut("me:feed", result, 1200);
           onOk(result);
         }

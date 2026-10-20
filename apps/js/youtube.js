@@ -257,9 +257,36 @@
     }
   }
 
+  // Old iPads can't run two YouTube players at once smoothly, so the one not on
+  // screen is removed entirely rather than paused.
+  function resetFrame(wrapId, playerId) {
+    var wrap = byId(wrapId);
+    wrap.innerHTML = "";
+    var holder = el("div");
+    holder.id = playerId;
+    wrap.appendChild(holder);
+  }
+
   function pauseShorts() {
-    if (shortsPlayer && shortsReady) {
-      shortsPlayer.pauseVideo();
+    if (shortsPlayer) {
+      try {
+        shortsPlayer.destroy();
+      } catch (err) {}
+      shortsPlayer = null;
+      shortsReady = false;
+      resetFrame("shorts-frame", "shorts-player");
+    }
+  }
+
+  function destroyMainPlayer() {
+    if (player) {
+      try {
+        player.destroy();
+      } catch (err) {}
+      player = null;
+      playerReady = false;
+      pendingLoad = null;
+      resetFrame("player-frame", "player");
     }
   }
 
@@ -280,9 +307,10 @@
         loadHome();
       }
     } else if (name === "shorts") {
-      if (player && playerReady) {
-        player.pauseVideo();
+      if (currentItem) {
+        closePlayer();
       }
+      destroyMainPlayer();
       showView("view-shorts");
       loadShorts();
     } else if (name === "subs") {

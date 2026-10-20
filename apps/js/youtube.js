@@ -63,16 +63,26 @@
     YTU.store("ytSettings", settings);
   }
 
+  function hideBoot() {
+    removeClass(document.body, "yt-booting");
+  }
+
   function setStatus(text, isError) {
     var node = byId("status");
     var loading = !!(text && !isError && /loading/i.test(text));
     if (loading) {
       node.textContent = "";
       node.className = "yt-status";
-      byId("loader-text").textContent = text;
+      var loaderText = byId("loader-text");
+      if (loaderText) {
+        loaderText.textContent = text;
+      }
       show("loader", true);
     } else {
       show("loader", false);
+      if (isError) {
+        hideBoot();
+      }
       node.textContent = text || "";
       node.className = isError ? "yt-status error" : "yt-status";
     }
@@ -80,6 +90,11 @@
 
   function setPlayerBusy(on) {
     show("player-busy", on);
+  }
+
+  function finishLoadingUi() {
+    hideBoot();
+    setStatus("", false);
   }
 
   var toastTimer = null;
@@ -428,7 +443,7 @@
       }
       renderCards(byId("list-feed"), items, "grid", emptyText || "Nothing here yet.", title, 55, function () {
         if (isLatest()) {
-          setStatus("", false);
+          finishLoadingUi();
         }
       });
     }, function (err) {
@@ -509,8 +524,8 @@
   function loadHome() {
     var feed = byId("home-feed");
     if (!YTG.canBrowse()) {
-      setStatus("", false);
       paintSetup(feed);
+      finishLoadingUi();
       return;
     }
     var isLatest = YTU.latest("home");
@@ -524,7 +539,7 @@
       }
       renderCards(feed, items, "grid", "No videos found.", "Home", 55, function () {
         if (isLatest()) {
-          setStatus("", false);
+          finishLoadingUi();
         }
       });
     }
@@ -587,7 +602,7 @@
       }
       renderCards(feed, data.videos || [], "grid", "No new videos from your subscriptions.", "Subscriptions", 55, function () {
         if (isLatest()) {
-          setStatus("", false);
+          finishLoadingUi();
         }
       });
     }, function (err) {
@@ -1684,7 +1699,7 @@
         setStatus("No Shorts right now. Try again later.", true);
         return;
       }
-      setStatus("", false);
+      finishLoadingUi();
       showShort(0);
     }, function (err) {
       if (isLatest()) {

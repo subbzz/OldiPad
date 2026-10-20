@@ -11,7 +11,17 @@
   <link rel="apple-touch-icon" href="icons/youtube.png">
   <link rel="stylesheet" href="css/youtube.css">
 </head>
-<body class="yt-app">
+<body class="yt-app yt-booting">
+  <div id="boot" class="yt-boot" aria-live="polite" aria-busy="true">
+    <div class="yt-boot-inner">
+      <div class="yt-boot-logo">
+        <span class="yt-playbtn"></span>
+        <span class="yt-word">YouTube</span>
+      </div>
+      <div class="yt-spinner" aria-hidden="true"></div>
+    </div>
+  </div>
+
   <header class="yt-top">
     <div id="brand" class="yt-logo">
       <span class="yt-playbtn"></span>
@@ -271,7 +281,7 @@
     </button>
   </nav>
 
-  <script src="js/config.js?v=3"></script>
+  <script src="js/config.js?v=4"></script>
   <script src="js/yt-lib.js"></script>
   <script src="js/yt-google.js"></script>
   <script src="js/youtube.js"></script>

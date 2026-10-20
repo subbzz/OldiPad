@@ -151,6 +151,27 @@ body.yt-app {
   width: 100%;
   padding-top: 56.25%;
   background: #000;
+  overflow: hidden;
+}
+
+/* Without this, #player collapses and YouTube's logo + spinner sit in the top-left corner. */
+.yt-player-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#player {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .yt-player iframe,
@@ -289,19 +310,60 @@ body.yt-app {
   color: #606060;
 }
 
-/* Full-screen loading (API / lists). The old “Loading…” line sat under the header on the left. */
+/* First open: centered logo + spinner over the whole screen (not under the header). */
+.yt-boot {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 120;
+  background: #fff;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+
+.yt-boot-inner {
+  text-align: center;
+}
+
+.yt-boot-logo {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.yt-boot-logo .yt-playbtn {
+  width: 36px;
+  height: 26px;
+  margin-right: 8px;
+}
+
+.yt-boot-logo .yt-word {
+  font-size: 28px;
+}
+
+body:not(.yt-booting) .yt-boot {
+  display: none !important;
+}
+
+/* Later loads (chips, lists): same centered spinner, full screen. */
 .yt-loader {
   position: fixed;
   left: 0;
   right: 0;
-  top: 48px;
-  top: calc(48px + constant(safe-area-inset-top));
-  top: calc(48px + env(safe-area-inset-top));
-  bottom: 50px;
-  bottom: calc(50px + constant(safe-area-inset-bottom));
-  bottom: calc(50px + env(safe-area-inset-bottom));
-  z-index: 55;
-  background: rgba(255, 255, 255, 0.92);
+  top: 0;
+  bottom: 0;
+  z-index: 110;
+  background: rgba(255, 255, 255, 0.94);
   display: -webkit-flex;
   display: flex;
   -webkit-align-items: center;
@@ -355,8 +417,8 @@ body.yt-app {
   right: 0;
   top: 0;
   bottom: 0;
-  z-index: 2;
-  background: rgba(0, 0, 0, 0.55);
+  z-index: 8;
+  background: #000;
   display: -webkit-flex;
   display: flex;
   -webkit-align-items: center;
@@ -1394,10 +1456,7 @@ body.shorts-mode {
 }
 
 body.shorts-mode .yt-loader {
-  top: 0;
-  bottom: 50px;
-  bottom: calc(50px + env(safe-area-inset-bottom));
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.85);
 }
 
 body.shorts-mode .yt-loader-inner p {

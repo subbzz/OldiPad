@@ -43,9 +43,9 @@
   var commentsNext = "";
   var reloadWhenIdle = false;
 
-  // Shorts state.
-  var shortsPlayer = null;
-  var shortsReady = false;
+  // Shorts state. Shorts reuse the one YouTube player: starting a player costs
+  // about a second of frozen screen on an iPad mini 2, switching videos doesn't.
+  var shortsMode = false;
   var shorts = [];
   var shortIndex = 0;
   var shortsLoadedFor = "";
@@ -257,36 +257,14 @@
     }
   }
 
-  // Old iPads can't run two YouTube players at once smoothly, so the one not on
-  // screen is removed entirely rather than paused.
-  function resetFrame(wrapId, playerId) {
-    var wrap = byId(wrapId);
-    wrap.innerHTML = "";
-    var holder = el("div");
-    holder.id = playerId;
-    wrap.appendChild(holder);
-  }
-
   function pauseShorts() {
-    if (shortsPlayer) {
-      try {
-        shortsPlayer.destroy();
-      } catch (err) {}
-      shortsPlayer = null;
-      shortsReady = false;
-      resetFrame("shorts-frame", "shorts-player");
+    if (!shortsMode) {
+      return;
     }
-  }
-
-  function destroyMainPlayer() {
-    if (player) {
-      try {
-        player.destroy();
-      } catch (err) {}
-      player = null;
-      playerReady = false;
-      pendingLoad = null;
-      resetFrame("player-frame", "player");
+    shortsMode = false;
+    removeClass(document.body, "shorts-playing");
+    if (player && playerReady) {
+      player.stopVideo();
     }
   }
 
@@ -310,7 +288,6 @@
       if (currentItem) {
         closePlayer();
       }
-      destroyMainPlayer();
       showView("view-shorts");
       loadShorts();
     } else if (name === "subs") {
@@ -817,6 +794,14 @@
   }
 
   function onPlayerState(event) {
+    if (shortsMode) {
+      // Shorts loop, like the app.
+      if (event.data === STATE.ENDED) {
+        player.seekTo(0);
+        player.playVideo();
+      }
+      return;
+    }
     paintMiniIcon();
     if (event.data === STATE.PLAYING) {
       failCount = 0;
@@ -832,6 +817,10 @@
   }
 
   function onPlayerError(event) {
+    if (shortsMode) {
+      showShort(shortIndex + 1);
+      return;
+    }
     if (!currentItem) {
       return;
     }
@@ -852,7 +841,7 @@
 
   // Remember where you are in each video, like the app does.
   setInterval(function () {
-    if (currentItem && playing()) {
+    if (currentItem && !shortsMode && playing()) {
       savePosition(currentItem.id, player.getCurrentTime(), player.getDuration());
     }
   }, 5000);
@@ -1415,40 +1404,9 @@
     byId("shorts-title").textContent = item.title || "";
     YTU.toggleClass(byId("shorts-like"), "is-on", !!shortRated[item.id]);
     pushUnique("ytHistory", item, MAX_HISTORY);
-    if (shortsPlayer && shortsReady) {
-      shortsPlayer.loadVideoById(item.id);
-      return;
-    }
-    if (shortsPlayer) {
-      return;
-    }
-    whenApi(function () {
-      shortsPlayer = new window.YT.Player("shorts-player", {
-        width: "100%",
-        height: "100%",
-        videoId: item.id,
-        playerVars: playerVars({ autoplay: 1, controls: 0 }),
-        events: {
-          onReady: function () {
-            shortsReady = true;
-            var want = shorts[shortIndex];
-            if (want && want.id !== item.id) {
-              shortsPlayer.loadVideoById(want.id);
-            }
-          },
-          onStateChange: function (event) {
-            // Shorts loop, like the app.
-            if (event.data === STATE.ENDED) {
-              shortsPlayer.seekTo(0);
-              shortsPlayer.playVideo();
-            }
-          },
-          onError: function () {
-            showShort(shortIndex + 1);
-          },
-        },
-      });
-    });
+    shortsMode = true;
+    addClass(document.body, "shorts-playing");
+    loadIntoPlayer(item.id, 0);
   }
 
   function wireShorts() {

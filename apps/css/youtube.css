@@ -1348,29 +1348,50 @@ body.shorts-mode .yt-status {
   overflow: hidden;
 }
 
-.yt-shorts-frame,
-.yt-shorts-frame iframe {
-  position: absolute;
+/* The shared YouTube player (inside #watch) is moved over the Shorts area;
+   the caption and buttons sit in a strip below it instead of on top of the
+   video, which keeps old iPads from repainting over the video. */
+body.shorts-playing #watch {
+  display: block !important;
+  position: fixed;
   left: 0;
+  right: 0;
   top: 0;
-  width: 100%;
+  bottom: 160px;
+  bottom: calc(160px + env(safe-area-inset-bottom));
+  z-index: 46;
+  background: #000;
+  box-shadow: none;
+}
+
+body.shorts-playing .yt-watch-stage,
+body.shorts-playing .yt-watch-main {
+  display: block;
   height: 100%;
-  border: 0;
   background: #000;
 }
 
-.yt-shorts-frame {
-  bottom: 120px;
-  height: auto;
+body.shorts-playing .yt-player {
+  width: 100%;
+  height: 100%;
+  padding-top: 0;
+}
+
+body.shorts-playing .yt-watch-meta,
+body.shorts-playing .yt-upnext,
+body.shorts-playing .yt-comments,
+body.shorts-playing .yt-collapse,
+body.shorts-playing .yt-mini-bar {
+  display: none !important;
 }
 
 .yt-shorts-info {
   position: absolute;
   left: 16px;
-  right: 90px;
-  bottom: 24px;
-  z-index: 3;
-  min-height: 80px;
+  right: 280px;
+  bottom: 12px;
+  height: 86px;
+  overflow: hidden;
   color: #fff;
 }
 
@@ -1381,29 +1402,30 @@ body.shorts-mode .yt-status {
 }
 
 .yt-shorts-title {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.35;
+  color: #ddd;
 }
 
 .yt-shorts-side {
   position: absolute;
-  right: 10px;
-  bottom: 24px;
-  z-index: 3;
-  width: 64px;
+  right: 8px;
+  bottom: 12px;
+  white-space: nowrap;
 }
 
 .yt-shorts-side button {
-  display: block;
+  display: inline-block;
   width: 64px;
   min-height: 0;
-  margin: 0 0 14px;
+  margin: 0 0 0 2px;
   padding: 0;
   border: 0;
   background: transparent;
   color: #fff;
   font-size: 12px;
   text-align: center;
+  vertical-align: top;
   -webkit-appearance: none;
   appearance: none;
 }
@@ -1413,7 +1435,7 @@ body.shorts-mode .yt-status {
   margin: 0 auto 4px;
   padding: 10px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: #333;
 }
 
 .yt-shorts-side button.is-on svg {

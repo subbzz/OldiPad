@@ -43,6 +43,8 @@
   var commentsNext = "";
   var commentsFor = null;
   var reloadWhenIdle = false;
+  // When signed in, matches YouTube's Watch later playlist (syncs with your other devices).
+  var watchLaterIds = null;
 
   // Shorts state. Shorts reuse the one YouTube player: starting a player costs
   // about a second of frozen screen on an iPad mini 2, switching videos doesn't.
@@ -171,6 +173,9 @@
   }
 
   function inList(key, id) {
+    if (key === "ytLater" && signedIn()) {
+      return !!(watchLaterIds && watchLaterIds[id]);
+    }
     var list = readList(key);
     var i;
     for (i = 0; i < list.length; i++) {
@@ -179,6 +184,27 @@
       }
     }
     return false;
+  }
+
+  function syncWatchLaterIds(done) {
+    done = done || function () {};
+    if (!signedIn()) {
+      watchLaterIds = null;
+      done();
+      return;
+    }
+    YTG.watchLaterVideos(function (items) {
+      watchLaterIds = {};
+      var i;
+      for (i = 0; i < items.length; i++) {
+        if (items[i] && items[i].id) {
+          watchLaterIds[items[i].id] = true;
+        }
+      }
+      done();
+    }, function () {
+      done();
+    });
   }
 
   var positions = YTU.load("ytPos", {}) || {};
@@ -681,6 +707,7 @@
       return;
     }
     var isLatest = YTU.latest("playlists");
+    syncWatchLaterIds();
     YTG.playlists(function (lists) {
       if (!isLatest()) {
         return;
@@ -706,7 +733,7 @@
           box.appendChild(b);
         })(lists[j]);
       }
-    }, function () {});
+    }, function () {}, true);
   }
 
   function openNamed(name) {
@@ -715,8 +742,14 @@
         ok(readList("ytHistory"), "Videos you watch will show up here.");
       });
     } else if (name === "watch-later") {
-      openList("Watch later", function (ok) {
-        ok(readList("ytLater"), "Tap Save on a video to watch it later.");
+      openList("Watch later", function (ok, fail) {
+        if (signedIn()) {
+          YTG.watchLaterVideos(function (items) {
+            ok(items, "Your Watch later list is empty.");
+          }, fail);
+          return;
+        }
+        ok(readList("ytLater"), "Sign in to sync Watch later with your Google account, or save videos here on this iPad.");
       });
     } else if (name === "liked") {
       openList("Liked videos", function (ok, fail) {
@@ -1578,6 +1611,25 @@
   }
 
   function toggleWatchLater(item) {
+    if (signedIn()) {
+      if (inList("ytLater", item.id)) {
+        YTG.removeFromWatchLater(item.id, function () {
+          if (watchLaterIds) {
+            delete watchLaterIds[item.id];
+          }
+          toast("Removed from Watch later");
+        }, toast);
+      } else {
+        YTG.addToWatchLater(item.id, function () {
+          if (!watchLaterIds) {
+            watchLaterIds = {};
+          }
+          watchLaterIds[item.id] = true;
+          toast("Saved to Watch later");
+        }, toast);
+      }
+      return;
+    }
     if (inList("ytLater", item.id)) {
       removeFrom("ytLater", item.id);
       toast("Removed from Watch later");
@@ -1635,7 +1687,7 @@
     }, function (err) {
       lists.innerHTML = "";
       lists.appendChild(el("p", "yt-empty-line", err));
-    });
+    }, true);
   }
 
   function saveToPlaylist(item, playlistId, title) {
@@ -1884,6 +1936,7 @@
 
   function afterAccountChange() {
     paintAccount();
+    syncWatchLaterIds();
     byId("subs-feed").innerHTML = "";
     byId("home-feed").innerHTML = "";
     if (listLoader) {

@@ -289,6 +289,87 @@ body.yt-app {
   color: #606060;
 }
 
+/* Full-screen loading (API / lists). The old “Loading…” line sat under the header on the left. */
+.yt-loader {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 48px;
+  top: calc(48px + constant(safe-area-inset-top));
+  top: calc(48px + env(safe-area-inset-top));
+  bottom: 50px;
+  bottom: calc(50px + constant(safe-area-inset-bottom));
+  bottom: calc(50px + env(safe-area-inset-bottom));
+  z-index: 55;
+  background: rgba(255, 255, 255, 0.92);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.yt-loader-inner {
+  padding: 16px;
+}
+
+.yt-loader-inner p {
+  margin: 12px 0 0;
+  font-size: 15px;
+  color: #606060;
+}
+
+.yt-spinner {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto;
+  border: 3px solid #e5e5e5;
+  border-top-color: #cc0000;
+  border-radius: 50%;
+  -webkit-animation: yt-spin 0.85s linear infinite;
+  animation: yt-spin 0.85s linear infinite;
+}
+
+.yt-spinner-light {
+  border-color: rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+}
+
+@-webkit-keyframes yt-spin {
+  to {
+    -webkit-transform: rotate(360deg);
+  }
+}
+
+@keyframes yt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.yt-player-busy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.55);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+body.shorts-playing .yt-player-busy {
+  z-index: 4;
+}
+
 .yt-status.error {
   color: #cc0000;
 }
@@ -1310,6 +1391,17 @@ body.mini .yt-view {
 body.shorts-mode {
   background: #000;
   padding-top: 0;
+}
+
+body.shorts-mode .yt-loader {
+  top: 0;
+  bottom: 50px;
+  bottom: calc(50px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.75);
+}
+
+body.shorts-mode .yt-loader-inner p {
+  color: #ddd;
 }
 
 body.shorts-mode #view-home,

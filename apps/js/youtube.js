@@ -14,7 +14,7 @@
   var CHIPS = ["All", "Music", "Songs", "News", "Live", "Movies", "Comedy", "Cooking", "Gaming"];
   var MAX_HISTORY = 50;
   var MAX_AUTOSKIP = 3;
-  var STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2 };
+  var STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3 };
 
   var settings = YTU.load("ytSettings", null) || {};
   if (settings.autoplay === undefined) {
@@ -65,8 +65,21 @@
 
   function setStatus(text, isError) {
     var node = byId("status");
-    node.textContent = text || "";
-    node.className = isError ? "yt-status error" : "yt-status";
+    var loading = !!(text && !isError && /loading/i.test(text));
+    if (loading) {
+      node.textContent = "";
+      node.className = "yt-status";
+      byId("loader-text").textContent = text;
+      show("loader", true);
+    } else {
+      show("loader", false);
+      node.textContent = text || "";
+      node.className = isError ? "yt-status error" : "yt-status";
+    }
+  }
+
+  function setPlayerBusy(on) {
+    show("player-busy", on);
   }
 
   var toastTimer = null;
@@ -291,6 +304,7 @@
       return;
     }
     var i = 0;
+    var doneOnce = false;
     function step() {
       if (paintGen[slot] !== gen) {
         return;
@@ -301,9 +315,13 @@
         frag.appendChild(cardNode(list[i], i, kind, items, context));
       }
       target.appendChild(frag);
+      if (!doneOnce && done) {
+        doneOnce = true;
+        done();
+      }
       if (i < list.length) {
         setTimeout(step, gap || 50);
-      } else if (done) {
+      } else if (done && !doneOnce) {
         done();
       }
     }
@@ -404,12 +422,15 @@
       if (!isLatest()) {
         return;
       }
-      setStatus("", false);
       byId("list-header").innerHTML = "";
       if (header) {
         byId("list-header").appendChild(header);
       }
-      renderCards(byId("list-feed"), items, "grid", emptyText || "Nothing here yet.", title);
+      renderCards(byId("list-feed"), items, "grid", emptyText || "Nothing here yet.", title, 55, function () {
+        if (isLatest()) {
+          setStatus("", false);
+        }
+      });
     }, function (err) {
       if (isLatest()) {
         setStatus(err, true);
@@ -501,8 +522,11 @@
       if (!isLatest()) {
         return;
       }
-      setStatus("", false);
-      renderCards(feed, items, "grid", "No videos found.", "Home");
+      renderCards(feed, items, "grid", "No videos found.", "Home", 55, function () {
+        if (isLatest()) {
+          setStatus("", false);
+        }
+      });
     }
     YTG.search(query, { live: live }, function (results) {
       // "All" mixes in new uploads from the channel you watched last, like the app's recommendations.
@@ -543,7 +567,6 @@
       if (!isLatest()) {
         return;
       }
-      setStatus("", false);
       strip.innerHTML = "";
       var channels = data.channels || [];
       var i;
@@ -562,7 +585,11 @@
           strip.appendChild(b);
         })(channels[i], i);
       }
-      renderCards(feed, data.videos || [], "grid", "No new videos from your subscriptions.", "Subscriptions");
+      renderCards(feed, data.videos || [], "grid", "No new videos from your subscriptions.", "Subscriptions", 55, function () {
+        if (isLatest()) {
+          setStatus("", false);
+        }
+      });
     }, function (err) {
       if (isLatest()) {
         setStatus(err, true);
@@ -870,6 +897,7 @@
   }
 
   function loadIntoPlayer(id, start) {
+    setPlayerBusy(true);
     if (player && playerReady) {
       player.loadVideoById({ videoId: id, startSeconds: start || 0 });
       return;
@@ -900,6 +928,11 @@
   }
 
   function onPlayerState(event) {
+    if (event.data === STATE.PLAYING) {
+      setPlayerBusy(false);
+    } else if (event.data === STATE.BUFFERING) {
+      setPlayerBusy(true);
+    }
     if (shortsMode) {
       // Shorts loop, like the app.
       if (event.data === STATE.ENDED) {
@@ -937,6 +970,7 @@
       setStatus(msg + " Playing the next one…", true);
       setTimeout(playNext, 2000);
     } else {
+      setPlayerBusy(false);
       setStatus(msg, true);
     }
   }
@@ -1135,13 +1169,9 @@
     addClass(document.body, "watching");
     show("watch-desc", false);
     byId("watch-desc").textContent = "";
-    paintWatchMeta(item, null);
-    paintRating();
-    paintSubscribed();
-    byId("comments").innerHTML = "";
-    show("comments-more", false);
-    show("comments-open", false);
-    show("comment-box", false);
+    byId("now-playing").textContent = item.title || "Video";
+    byId("mini-title").textContent = item.title || "Video";
+    byId("mini-author").textContent = item.author || "";
     setStatus("", false);
     if (prevPos) {
       savePosition(prev.id, prevPos.t, prevPos.d);
@@ -1169,10 +1199,22 @@
         removeClass(document.body, "feed-hold");
         loadIntoPlayer(item.id, startAt);
         window.scrollTo(0, 0);
-      }, 60);
+      }, 120);
     }
 
     var isLatest = YTU.latest("watch");
+    setTimeout(function () {
+      if (!isLatest()) {
+        return;
+      }
+      paintWatchMeta(item, null);
+      paintRating();
+      paintSubscribed();
+      byId("comments").innerHTML = "";
+      show("comments-more", false);
+      show("comments-open", false);
+      show("comment-box", false);
+    }, 0);
     setTimeout(function () {
       if (!isLatest()) {
         return;
@@ -1377,7 +1419,7 @@
     clearTimeout(feedHoldTimer);
     feedHoldTimer = setTimeout(function () {
       removeClass(document.body, "feed-hold");
-    }, 80);
+    }, 120);
   }
 
   function expandFromMini() {
@@ -1388,7 +1430,7 @@
       removeClass(document.body, "mini");
       removeClass(document.body, "feed-hold");
       window.scrollTo(0, 0);
-    }, 60);
+    }, 120);
   }
 
   function closePlayer(opts) {
@@ -1422,6 +1464,7 @@
     removeClass(document.body, "watching");
     removeClass(document.body, "mini");
     removeClass(document.body, "feed-hold");
+    setPlayerBusy(false);
     show("watch", false);
     if (reloadWhenIdle) {
       location.reload();
@@ -1641,6 +1684,7 @@
         setStatus("No Shorts right now. Try again later.", true);
         return;
       }
+      setStatus("", false);
       showShort(0);
     }, function (err) {
       if (isLatest()) {

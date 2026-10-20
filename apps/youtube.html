@@ -36,6 +36,13 @@
 
   <p id="status" class="yt-status"></p>
 
+  <div id="loader" class="yt-loader hidden" aria-live="polite" aria-busy="true">
+    <div class="yt-loader-inner">
+      <div class="yt-spinner" aria-hidden="true"></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+  </div>
+
   <section id="view-home" class="yt-view">
     <div id="chips" class="yt-chips"></div>
     <div id="home-feed" class="yt-feed"></div>
@@ -151,6 +158,9 @@
       <div class="yt-watch-main">
         <div id="player-wrap" class="yt-player">
           <div id="player-frame" class="yt-player-frame"><div id="player"></div></div>
+          <div id="player-busy" class="yt-player-busy hidden">
+            <div class="yt-spinner yt-spinner-light" aria-hidden="true"></div>
+          </div>
           <button type="button" id="watch-collapse" class="yt-collapse" aria-label="Minimise">
             <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6L12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>
           </button>
@@ -261,7 +271,7 @@
     </button>
   </nav>
 
-  <script src="js/config.js?v=2"></script>
+  <script src="js/config.js?v=3"></script>
   <script src="js/yt-lib.js"></script>
   <script src="js/yt-google.js"></script>
   <script src="js/youtube.js"></script>

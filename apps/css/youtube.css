@@ -1152,6 +1152,13 @@ body.feed-hold .yt-view {
   appearance: none;
 }
 
+.yt-setting-note {
+  margin: 10px 0 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #606060;
+}
+
 .yt-play-form {
   margin-top: 24px;
 }
@@ -1820,6 +1827,15 @@ body.shorts-playing .yt-mini-bar {
     border-left: 1px solid #e5e5e5;
   }
 
+  /* Watch: player + details stay fixed; Up next list scrolls on its own. */
+  body.watching:not(.mini):not(.shorts-playing) .yt-watch-stage {
+    -webkit-align-items: stretch;
+    align-items: stretch;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   body.watching:not(.mini):not(.shorts-playing) .yt-watch-main {
     display: -webkit-flex;
     display: flex;
@@ -1827,6 +1843,29 @@ body.shorts-playing .yt-mini-bar {
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    overflow: hidden;
+  }
+
+  body.watching:not(.mini):not(.shorts-playing) .yt-upnext {
+    display: -webkit-flex;
+    display: flex;
+    -webkit-flex-direction: column;
+    flex-direction: column;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    -webkit-align-self: stretch;
+    align-self: stretch;
+  }
+
+  body.watching:not(.mini):not(.shorts-playing) #upnext {
+    -webkit-flex: 1;
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   body.watching:not(.mini) .yt-top {

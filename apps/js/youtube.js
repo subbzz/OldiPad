@@ -14,7 +14,7 @@
   var CHIPS = ["All", "Music", "Songs", "News", "Live", "Movies", "Comedy", "Cooking", "Gaming"];
   var MAX_HISTORY = 50;
   var MAX_AUTOSKIP = 3;
-  var STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3 };
+  var STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 };
 
   var settings = YTU.load("ytSettings", null) || {};
   if (settings.autoplay === undefined) {
@@ -88,9 +88,25 @@
     }
   }
 
-  // Only while a new video is starting. BUFFERING during resize (mini ↔ full) or
-  // during ads must not bring the black overlay back on top of the embed.
   var playerAwaitingPlay = false;
+  var playerBusyTimer = null;
+
+  function ytLog(msg) {
+    if (!window.__ytLog) {
+      window.__ytLog = [];
+    }
+    window.__ytLog.push(new Date().toISOString() + " " + msg);
+    if (window.__ytLog.length > 100) {
+      window.__ytLog.shift();
+    }
+  }
+
+  function clearPlayerBusy() {
+    playerAwaitingPlay = false;
+    clearTimeout(playerBusyTimer);
+    playerBusyTimer = null;
+    setPlayerBusy(false);
+  }
 
   function setPlayerBusy(on) {
     show("player-busy", on);
@@ -916,10 +932,16 @@
   }
 
   function loadIntoPlayer(id, start) {
+    ytLog("load " + id);
     playerAwaitingPlay = true;
-    if (!player || !playerReady) {
-      setPlayerBusy(true);
-    }
+    clearTimeout(playerBusyTimer);
+    // Never cover the iframe for long: it blocked playback on iOS 12 and hid ads.
+    playerBusyTimer = setTimeout(function () {
+      if (playerAwaitingPlay) {
+        ytLog("busy timeout " + id);
+        clearPlayerBusy();
+      }
+    }, 12000);
     if (player && playerReady) {
       player.loadVideoById({ videoId: id, startSeconds: start || 0 });
       return;
@@ -929,6 +951,7 @@
       return; // still starting up; onReady loads pendingLoad
     }
     whenApi(function () {
+      ytLog("create player " + id);
       player = new window.YT.Player("player", {
         width: "100%",
         height: "100%",
@@ -937,6 +960,8 @@
         events: {
           onReady: function () {
             playerReady = true;
+            ytLog("player ready");
+            clearPlayerBusy();
             if (pendingLoad && pendingLoad.id !== id) {
               player.loadVideoById({ videoId: pendingLoad.id, startSeconds: pendingLoad.start || 0 });
             }
@@ -950,9 +975,11 @@
   }
 
   function onPlayerState(event) {
-    if (event.data === STATE.PLAYING) {
-      playerAwaitingPlay = false;
-      setPlayerBusy(false);
+    ytLog("state " + event.data);
+    if (event.data === STATE.PLAYING || event.data === STATE.CUED) {
+      clearPlayerBusy();
+    } else if (event.data === STATE.PAUSED && player && player.getDuration && player.getDuration() > 0) {
+      clearPlayerBusy();
     }
     if (shortsMode) {
       // Shorts loop, like the app.
@@ -991,8 +1018,7 @@
       setStatus(msg + " Playing the next one…", true);
       setTimeout(playNext, 2000);
     } else {
-      playerAwaitingPlay = false;
-      setPlayerBusy(false);
+      clearPlayerBusy();
       setStatus(msg, true);
     }
   }
@@ -1202,16 +1228,17 @@
 
     var saved = positions[item.id];
     var startAt = saved && saved.t > 10 ? saved.t : 0;
-    if (full) {
-      // The feed is already hidden. Ask the player to move before any more work.
-      loadIntoPlayer(item.id, startAt);
-    } else {
-      // Hide the list on this turn. Grow or start the player on the next one,
-      // so the two layouts don't land together.
-      if (!fromMini) {
-        window.scrollTo(0, 0);
-      }
+    if (!fromMini) {
+      window.scrollTo(0, 0);
+    }
+    if (!full) {
       addClass(document.body, "feed-hold");
+    }
+    // Must run in the same turn as the tap. iOS 12 drops autoplay if this waits
+    // on setTimeout (user gesture is lost) — that looked like a forever spinner.
+    ensureApi();
+    loadIntoPlayer(item.id, startAt);
+    if (!full) {
       clearTimeout(feedHoldTimer);
       feedHoldTimer = setTimeout(function () {
         if (currentItem !== item) {
@@ -1219,7 +1246,6 @@
         }
         removeClass(document.body, "mini");
         removeClass(document.body, "feed-hold");
-        loadIntoPlayer(item.id, startAt);
         window.scrollTo(0, 0);
       }, 120);
     }
@@ -1433,8 +1459,7 @@
     if (!hasClass(document.body, "watching")) {
       return;
     }
-    playerAwaitingPlay = false;
-    setPlayerBusy(false);
+    clearPlayerBusy();
     // feed-hold keeps the list hidden while the iframe shrinks. The list
     // appears on its own turn, which is the lag when leaving a video.
     addClass(document.body, "feed-hold");
@@ -1448,8 +1473,7 @@
 
   function expandFromMini() {
     closeSearch();
-    playerAwaitingPlay = false;
-    setPlayerBusy(false);
+    clearPlayerBusy();
     addClass(document.body, "feed-hold");
     clearTimeout(feedHoldTimer);
     feedHoldTimer = setTimeout(function () {
@@ -1490,8 +1514,7 @@
     removeClass(document.body, "watching");
     removeClass(document.body, "mini");
     removeClass(document.body, "feed-hold");
-    playerAwaitingPlay = false;
-    setPlayerBusy(false);
+    clearPlayerBusy();
     show("watch", false);
     if (reloadWhenIdle) {
       location.reload();
@@ -2064,7 +2087,11 @@
       flushPositions();
     });
     // Player script after the feed has had time to paint; cache tidy much later.
-    setTimeout(ensureApi, 4000);
+    function primePlayerApi() {
+      ensureApi();
+    }
+    document.addEventListener("touchstart", primePlayerApi, false);
+    setTimeout(primePlayerApi, 600);
     setTimeout(YTU.cachePrune, 20000);
   });
 })();

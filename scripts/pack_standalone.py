@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build self-contained Launcher/WhatsApp files (inlined CSS and icons) for AirDrop / Files.
 
-YouTube needs serve.sh running on the Mac, so the standalone YouTube.html only
-links to the server copy.
+YouTube's player only works from a web address, so the standalone YouTube.html
+just links to the published copy.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import base64
 import shutil
 from pathlib import Path
 
-from make_profile import default_base
+from make_profile import default_site
 
 ROOT = Path(__file__).resolve().parents[1]
 APPS = ROOT / "apps"
@@ -28,7 +28,7 @@ YOUTUBE_LINK = """<!DOCTYPE html>
 </head>
 <body>
   <h1>YouTube</h1>
-  <p>YouTube runs from the Mac. Start <code>./serve.sh</code> on the Mac, then open:</p>
+  <p>YouTube can't run from a file. Open it from its web address:</p>
   <p><a href="%(url)s">%(url)s</a></p>
   <p>Add that page to the Home Screen from Safari.</p>
 </body>
@@ -55,9 +55,9 @@ def inline_page(name: str, links: dict[str, str]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", default="", help="http://HOST.local:PORT of serve.sh")
-    base = (parser.parse_args().base_url or default_base()).rstrip("/")
-    youtube = base + "/apps/youtube.html"
+    parser.add_argument("--site-url", default="", help="where apps/ is published (default: GitHub Pages)")
+    site = (parser.parse_args().site_url or default_site()).rstrip("/")
+    youtube = site + "/youtube.html"
 
     OUT.mkdir(parents=True, exist_ok=True)
     files = {

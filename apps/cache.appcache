@@ -1,12 +1,14 @@
 CACHE MANIFEST
-# server.py adds a "# rev" line from these files' contents, so iPads pick up changes.
+# The deploy adds a "# rev" line so iPads pick up each new version.
 
 index.html
 youtube.html
 whatsapp.html
 css/app.css
 css/youtube.css
+js/config.js
 js/yt-lib.js
+js/yt-google.js
 js/youtube.js
 icons/launcher.png
 icons/youtube.png

@@ -1,3 +1,0 @@
-# yt-dlp[default] includes yt-dlp-ejs, the YouTube JS challenge solver.
-# It also needs a JS runtime on the Mac: deno or node (brew install node).
-yt-dlp[default]>=2026.8.19

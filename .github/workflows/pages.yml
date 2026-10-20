@@ -1,0 +1,38 @@
+# Publishes apps/ to GitHub Pages on every push to main.
+name: Publish to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Home Screen profile and stamp the offline cache
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          python3 scripts/make_profile.py --site-url "https://${owner}.github.io/${repo}"
+          # A new revision line makes iPads download the new version.
+          sed -i "2i # rev ${GITHUB_SHA}" apps/cache.appcache
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps
+      - id: deployment
+        uses: actions/deploy-pages@v4

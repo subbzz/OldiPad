@@ -1,22 +1,22 @@
-/* YouTube app for iOS 12 Safari. ES5 only. Talks to scripts/server.py on the Mac. */
+/* YouTube app for iOS 12 Safari, running entirely on the iPad. ES5 only.
+ * Data comes from the YouTube Data API (yt-google.js) and videos play in
+ * YouTube's own embedded player (IFrame API). */
 (function () {
   "use strict";
 
-  var byId = YT.byId;
-  var addClass = YT.addClass;
-  var removeClass = YT.removeClass;
-  var hasClass = YT.hasClass;
-  var show = YT.show;
-  var el = YT.el;
+  var byId = YTU.byId;
+  var addClass = YTU.addClass;
+  var removeClass = YTU.removeClass;
+  var hasClass = YTU.hasClass;
+  var show = YTU.show;
+  var el = YTU.el;
 
   var CHIPS = ["All", "Music", "Songs", "News", "Live", "Movies", "Comedy", "Cooking", "Gaming"];
   var MAX_HISTORY = 50;
   var MAX_AUTOSKIP = 3;
+  var STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2 };
 
-  var settings = YT.load("ytSettings", null) || {};
-  if (settings.hd === undefined) {
-    settings.hd = true;
-  }
+  var settings = YTU.load("ytSettings", null) || {};
   if (settings.autoplay === undefined) {
     settings.autoplay = true;
   }
@@ -24,39 +24,42 @@
     settings.topic = "Tamil";
   }
 
-  var auth = { configured: false, profile: YT.load("ytProfile", null) };
   var currentTab = "home";
   var currentChip = "All";
   var listStack = [];
   var listLoader = null;
 
   // Watch page state.
+  var player = null;
+  var playerReady = false;
+  var pendingLoad = null;
   var queue = [];
   var lastList = [];
   var currentItem = null;
   var currentInfo = null;
-  var currentQuality = "hd";
   var rating = "none";
   var subscribed = false;
   var failCount = 0;
-  var pendingSeek = 0;
-  var lastSaved = 0;
-  var prefetched = "";
   var commentsNext = "";
   var reloadWhenIdle = false;
 
   // Shorts state.
+  var shortsPlayer = null;
+  var shortsReady = false;
   var shorts = [];
   var shortIndex = 0;
   var shortsLoadedFor = "";
   var shortRated = {};
 
+  var apiReady = false;
+  var apiWaiters = [];
+
   function signedIn() {
-    return YT.hasSession() && !!auth.profile;
+    return YTG.signedIn();
   }
 
   function saveSettings() {
-    YT.store("ytSettings", settings);
+    YTU.store("ytSettings", settings);
   }
 
   function setStatus(text, isError) {
@@ -79,7 +82,7 @@
   // ---- local lists: history, watch later, resume positions --------------
 
   function readList(key) {
-    var list = YT.load(key, []);
+    var list = YTU.load(key, []);
     return list && list.length !== undefined ? list : [];
   }
 
@@ -103,7 +106,7 @@
         next.push(list[i]);
       }
     }
-    YT.store(key, next);
+    YTU.store(key, next);
   }
 
   function removeFrom(key, id) {
@@ -115,7 +118,7 @@
         next.push(list[i]);
       }
     }
-    YT.store(key, next);
+    YTU.store(key, next);
   }
 
   function inList(key, id) {
@@ -129,7 +132,7 @@
     return false;
   }
 
-  var positions = YT.load("ytPos", {}) || {};
+  var positions = YTU.load("ytPos", {}) || {};
   function savePosition(id, t, d) {
     if (!id) {
       return;
@@ -152,7 +155,7 @@
       });
       delete positions[ids[0]];
     }
-    YT.store("ytPos", positions);
+    YTU.store("ytPos", positions);
   }
 
   // ---- cards ---------------------------------------------------------------
@@ -162,12 +165,12 @@
     var thumb = el("div", kind === "compact" ? "yt-compact-thumb" : "yt-thumb");
     var img = el("img");
     img.alt = "";
-    img.src = YT.thumbUrl(item.id);
+    img.src = YTU.thumbUrl(item.id);
     thumb.appendChild(img);
     if (item.live) {
       thumb.appendChild(el("div", "yt-dur yt-live", "LIVE"));
-    } else if (YT.formatDuration(item.duration)) {
-      thumb.appendChild(el("div", "yt-dur", YT.formatDuration(item.duration)));
+    } else if (YTU.formatDuration(item.duration)) {
+      thumb.appendChild(el("div", "yt-dur", YTU.formatDuration(item.duration)));
     }
     var pos = positions[item.id];
     var total = (pos && pos.d) || item.duration;
@@ -183,17 +186,13 @@
     var row = el("div", kind === "grid" ? "yt-card-row" : "yt-card-row yt-card-row-plain");
     if (kind === "grid") {
       var avatar = el("div", "yt-avatar");
-      YT.avatarInto(avatar, item.author, item.avatar, index);
+      YTU.avatarInto(avatar, item.author, item.avatar, index);
       row.appendChild(avatar);
     }
     var text = el("div", "yt-card-text");
     text.appendChild(el("div", kind === "grid" ? "yt-card-title" : "yt-compact-title", item.title || "Video"));
     text.appendChild(
-      el(
-        "div",
-        "yt-card-sub",
-        YT.joinBits([item.author, YT.formatViews(item.views), YT.timeAgo(item.published)])
-      )
+      el("div", "yt-card-sub", YTU.joinBits([item.author, YTU.formatViews(item.views), YTU.timeAgo(item.published)]))
     );
     row.appendChild(text);
     var more = el("button", "yt-more");
@@ -240,7 +239,7 @@
     for (i = 0; i < VIEWS.length; i++) {
       show(VIEWS[i], VIEWS[i] === id);
     }
-    toggleShortsMode(id === "view-shorts");
+    YTU.toggleClass(document.body, "shorts-mode", id === "view-shorts");
     window.scrollTo(0, 0);
   }
 
@@ -248,13 +247,19 @@
     var tabs = document.querySelectorAll(".yt-tabs button");
     var i;
     for (i = 0; i < tabs.length; i++) {
-      YT.toggleClass(tabs[i], "is-on", tabs[i].getAttribute("data-tab") === name);
+      YTU.toggleClass(tabs[i], "is-on", tabs[i].getAttribute("data-tab") === name);
     }
   }
 
   function leaveWatch() {
     if (hasClass(document.body, "watching") && !hasClass(document.body, "mini")) {
       shrinkToMini();
+    }
+  }
+
+  function pauseShorts() {
+    if (shortsPlayer && shortsReady) {
+      shortsPlayer.pauseVideo();
     }
   }
 
@@ -267,7 +272,7 @@
     markTab(name);
     setStatus("", false);
     if (name !== "shorts") {
-      byId("shorts-player").pause();
+      pauseShorts();
     }
     if (name === "home") {
       showView("view-home");
@@ -275,7 +280,9 @@
         loadHome();
       }
     } else if (name === "shorts") {
-      byId("player").pause();
+      if (player && playerReady) {
+        player.pauseVideo();
+      }
       showView("view-shorts");
       loadShorts();
     } else if (name === "subs") {
@@ -298,13 +305,13 @@
 
   function runList(title, loader) {
     listLoader = loader;
-    byId("shorts-player").pause();
+    pauseShorts();
     showView("view-list");
     byId("list-title").textContent = title;
     byId("list-header").innerHTML = "";
     byId("list-feed").innerHTML = "";
     setStatus("Loading…", false);
-    var isLatest = YT.latest("list");
+    var isLatest = YTU.latest("list");
     loader(function (items, emptyText, header) {
       if (!isLatest()) {
         return;
@@ -335,7 +342,7 @@
   // ---- Home ------------------------------------------------------------
 
   function chipQuery(chip) {
-    var topic = YT.trim(settings.topic);
+    var topic = YTU.trim(settings.topic);
     return topic ? topic + " " + chip.toLowerCase() : chip.toLowerCase();
   }
 
@@ -374,15 +381,34 @@
     return out;
   }
 
+  function paintSetup(target) {
+    target.innerHTML = "";
+    var box = el("div", "yt-empty");
+    box.appendChild(el("strong", "", "Almost ready"));
+    if (YTG.canSignIn()) {
+      box.appendChild(el("p", "", "Sign in with Google to start watching."));
+      var b = el("button", "yt-signin-btn", "Sign in");
+      b.type = "button";
+      b.addEventListener("click", openSignIn);
+      box.appendChild(b);
+    } else {
+      box.appendChild(el("p", "", "Add your YouTube API key to apps/js/config.js (see the README), then reopen this app."));
+    }
+    target.appendChild(box);
+  }
+
   function loadHome() {
-    var isLatest = YT.latest("home");
     var feed = byId("home-feed");
+    if (!YTG.canBrowse()) {
+      setStatus("", false);
+      paintSetup(feed);
+      return;
+    }
+    var isLatest = YTU.latest("home");
     feed.innerHTML = "";
     setStatus("Loading…", false);
-    var main = currentChip === "All" ? chipQuery("songs") : chipQuery(currentChip);
-    if (currentChip === "Live") {
-      main = chipQuery("live");
-    }
+    var live = currentChip === "Live";
+    var query = currentChip === "All" ? chipQuery("songs") : live ? YTU.trim(settings.topic) || "news" : chipQuery(currentChip);
     function paint(items) {
       if (!isLatest()) {
         return;
@@ -390,30 +416,23 @@
       setStatus("", false);
       renderCards(feed, items, "grid", "No videos found.", "Home");
     }
-    function fail(err) {
-      if (isLatest()) {
-        setStatus(err, true);
-      }
-    }
-    YT.get("/api/search" + YT.q({ q: main }), function (data) {
-      var results = data.results || [];
-      // "All" mixes in videos like the one you watched last, like the app's recommendations.
+    YTG.search(query, { live: live }, function (results) {
+      // "All" mixes in new uploads from the channel you watched last, like the app's recommendations.
       var history = readList("ytHistory");
-      if (currentChip !== "All" || !history.length) {
+      if (currentChip !== "All" || !history.length || !history[0].channelId) {
         paint(results);
         return;
       }
-      var seed = (history[0].title || "").split("|")[0];
-      YT.get(
-        "/api/related" + YT.q({ id: history[0].id, q: seed }),
-        function (more) {
-          paint(interleave(results, more.results || []));
-        },
-        function () {
-          paint(results);
-        }
-      );
-    }, fail);
+      YTG.channelVideos(history[0].channelId, 12, function (more) {
+        paint(interleave(results, more));
+      }, function () {
+        paint(results);
+      });
+    }, function (err) {
+      if (isLatest()) {
+        setStatus(err, true);
+      }
+    });
   }
 
   // ---- Subscriptions ---------------------------------------------------
@@ -428,11 +447,11 @@
       feed.innerHTML = "";
       return;
     }
-    var isLatest = YT.latest("subs");
+    var isLatest = YTU.latest("subs");
     if (!feed.childNodes.length) {
       setStatus("Loading your subscriptions…", false);
     }
-    YT.get("/api/me/feed", function (data) {
+    YTG.feed(function (data) {
       if (!isLatest()) {
         return;
       }
@@ -445,7 +464,7 @@
           var b = el("button", "yt-strip-item");
           b.type = "button";
           var av = el("span", "yt-avatar yt-avatar-lg");
-          YT.avatarInto(av, ch.title, ch.avatar, index);
+          YTU.avatarInto(av, ch.title, ch.avatar, index);
           b.appendChild(av);
           b.appendChild(el("span", "yt-strip-name", ch.title));
           b.addEventListener("click", function () {
@@ -459,19 +478,16 @@
       if (isLatest()) {
         setStatus(err, true);
       }
-      if (!signedIn()) {
-        loadSubs();
-      }
     });
   }
 
   // ---- You -------------------------------------------------------------
 
   function paintAccount() {
-    var profile = signedIn() ? auth.profile : null;
+    var profile = YTG.profile();
     var head = byId("header-you");
     if (profile) {
-      YT.avatarInto(head, profile.name, profile.avatar, 1);
+      YTU.avatarInto(head, profile.name, profile.avatar, 1);
     } else {
       head.style.background = "";
       head.innerHTML =
@@ -481,8 +497,8 @@
     show("you-in", !!profile);
     if (profile) {
       byId("you-name").textContent = profile.name;
-      YT.avatarInto(byId("you-avatar"), profile.name, profile.avatar, 1);
-      YT.avatarInto(byId("comment-me"), profile.name, profile.avatar, 1);
+      YTU.avatarInto(byId("you-avatar"), profile.name, profile.avatar, 1);
+      YTU.avatarInto(byId("comment-me"), profile.name, profile.avatar, 1);
     }
     var needs = document.querySelectorAll(".yt-needs-sign");
     var i;
@@ -504,7 +520,6 @@
         shelf.appendChild(cardNode(history[i], i, "shelf", history, "History"));
       }
     }
-    byId("set-hd").checked = !!settings.hd;
     byId("set-autoplay").checked = !!settings.autoplay;
     byId("set-topic").value = settings.topic;
 
@@ -514,13 +529,12 @@
       show(wrap, false);
       return;
     }
-    var isLatest = YT.latest("playlists");
-    YT.get("/api/me/playlists", function (data) {
+    var isLatest = YTU.latest("playlists");
+    YTG.playlists(function (lists) {
       if (!isLatest()) {
         return;
       }
       box.innerHTML = "";
-      var lists = data.playlists || [];
       show(wrap, lists.length > 0);
       var j;
       for (j = 0; j < lists.length; j++) {
@@ -555,8 +569,8 @@
       });
     } else if (name === "liked") {
       openList("Liked videos", function (ok, fail) {
-        YT.get("/api/me/liked", function (data) {
-          ok(data.results || [], "Videos you like will show up here.");
+        YTG.liked(function (items) {
+          ok(items, "Videos you like will show up here.");
         }, fail);
       });
     }
@@ -564,8 +578,8 @@
 
   function openPlaylist(id, title) {
     openList(title || "Playlist", function (ok, fail) {
-      YT.get("/api/playlist" + YT.q({ id: id }), function (data) {
-        ok(data.videos || [], "This playlist is empty.");
+      YTG.playlistVideos(id, 50, 300, function (items) {
+        ok(items, "This playlist is empty.");
       }, fail);
     });
   }
@@ -573,21 +587,21 @@
   function subscribeButton(channelId) {
     var b = el("button", "yt-sub", "Subscribe");
     b.type = "button";
-    function paint(on) {
-      b.textContent = on ? "Subscribed" : "Subscribe";
-      YT.toggleClass(b, "is-on", on);
-    }
     var on = false;
+    function paint() {
+      b.textContent = on ? "Subscribed" : "Subscribe";
+      YTU.toggleClass(b, "is-on", on);
+    }
     if (signedIn()) {
-      YT.get("/api/me/state" + YT.q({ channel: channelId }), function (data) {
-        on = !!data.subscribed;
-        paint(on);
+      YTG.subscriptionId(channelId, function (id) {
+        on = !!id;
+        paint();
       }, function () {});
     }
     b.addEventListener("click", function () {
       toggleSubscribe(channelId, !on, function (now) {
         on = now;
-        paint(on);
+        paint();
       });
     });
     return b;
@@ -599,17 +613,19 @@
       return;
     }
     openList(name || "Channel", function (ok, fail) {
-      YT.get("/api/channel" + YT.q({ id: channelId }), function (data) {
+      YTG.channel(channelId, function (ch) {
         var head = el("div", "yt-channel-head");
         var av = el("div", "yt-avatar yt-avatar-xl");
-        YT.avatarInto(av, data.title, data.avatar, 0);
+        YTU.avatarInto(av, ch.title, ch.avatar, 0);
         head.appendChild(av);
         var text = el("div", "yt-channel-head-text");
-        text.appendChild(el("h2", "", data.title || name));
-        text.appendChild(el("p", "", data.followers ? YT.shortCount(data.followers) + " subscribers" : ""));
+        text.appendChild(el("h2", "", ch.title || name));
+        text.appendChild(el("p", "", ch.followers ? YTU.shortCount(ch.followers) + " subscribers" : ""));
         head.appendChild(text);
         head.appendChild(subscribeButton(channelId));
-        ok(data.videos || [], "This channel has no videos.", head);
+        YTG.channelVideos(channelId, 30, function (items) {
+          ok(items, "This channel has no videos.", head);
+        }, fail);
       }, fail);
     });
   }
@@ -644,7 +660,7 @@
     var box = byId("suggest");
     box.innerHTML = "";
     if (recent) {
-      items = YT.load("ytSearches", []) || [];
+      items = YTU.load("ytSearches", []) || [];
     }
     var i;
     for (i = 0; i < items.length; i++) {
@@ -663,7 +679,7 @@
   }
 
   function onSearchInput() {
-    var value = YT.trim(byId("q").value);
+    var value = YTU.trim(byId("q").value);
     show("search-clear", !!value);
     clearTimeout(suggestTimer);
     if (!value) {
@@ -671,21 +687,21 @@
       return;
     }
     suggestTimer = setTimeout(function () {
-      var isLatest = YT.latest("suggest");
-      YT.get("/api/suggest" + YT.q({ q: value }), function (data) {
+      var isLatest = YTU.latest("suggest");
+      YTG.suggest(value, function (list) {
         if (isLatest() && !hasClass(byId("search-form"), "hidden")) {
-          paintSuggestions(data.suggestions || [], false);
+          paintSuggestions(list, false);
         }
-      }, function () {});
+      });
     }, 180);
   }
 
   function runSearch(text) {
-    var query = YT.trim(text);
+    var query = YTU.trim(text);
     if (!query) {
       return;
     }
-    var recent = YT.load("ytSearches", []) || [];
+    var recent = YTU.load("ytSearches", []) || [];
     var next = [query];
     var i;
     for (i = 0; i < recent.length && next.length < 12; i++) {
@@ -693,37 +709,127 @@
         next.push(recent[i]);
       }
     }
-    YT.store("ytSearches", next);
+    YTU.store("ytSearches", next);
     openList(query, function (ok, fail) {
-      YT.get("/api/search" + YT.q({ q: query }), function (data) {
-        ok(data.results || [], "No videos found.");
+      YTG.search(query, {}, function (items) {
+        ok(items, "No videos found.");
       }, fail);
     });
   }
 
-  // ---- watch page ------------------------------------------------------
+  // ---- YouTube IFrame player ---------------------------------------------
 
-  function playSource(id, quality) {
-    return "/api/play" + YT.q({ id: id, q: quality });
-  }
-
-  function startVideo(quality, seekTo) {
-    var video = byId("player");
-    currentQuality = quality;
-    pendingSeek = seekTo || 0;
-    video.src = playSource(currentItem.id, quality);
-    video.load();
-    var played = video.play();
-    if (played && played["catch"]) {
-      played["catch"](function () {});
+  // Called by https://www.youtube.com/iframe_api once it has loaded.
+  window.onYouTubeIframeAPIReady = function () {
+    apiReady = true;
+    var waiters = apiWaiters;
+    apiWaiters = [];
+    for (var i = 0; i < waiters.length; i++) {
+      waiters[i]();
     }
-    paintQuality();
+  };
+
+  function whenApi(fn) {
+    if (apiReady || (window.YT && window.YT.loaded && window.YT.Player)) {
+      fn();
+    } else {
+      apiWaiters.push(fn);
+    }
   }
 
-  function paintQuality() {
-    var hd = currentQuality === "hd" && (!currentInfo || currentInfo.hd !== false);
-    byId("quality-label").textContent = hd ? "HD" : "360p";
+  function playerVars(extra) {
+    var vars = { playsinline: 1, rel: 0, modestbranding: 1, iv_load_policy: 3, origin: location.protocol + "//" + location.host };
+    var k;
+    for (k in extra || {}) {
+      if (extra.hasOwnProperty(k)) {
+        vars[k] = extra[k];
+      }
+    }
+    return vars;
   }
+
+  function embedError(code) {
+    if (code === 101 || code === 150 || code === 153) {
+      return "The owner of this video doesn't allow it to play outside YouTube.";
+    }
+    if (code === 100) {
+      return "This video was removed or made private.";
+    }
+    return "This video can't play right now.";
+  }
+
+  function loadIntoPlayer(id, start) {
+    if (player && playerReady) {
+      player.loadVideoById({ videoId: id, startSeconds: start || 0 });
+      return;
+    }
+    pendingLoad = { id: id, start: start };
+    if (player) {
+      return; // still starting up; onReady loads pendingLoad
+    }
+    whenApi(function () {
+      player = new window.YT.Player("player", {
+        width: "100%",
+        height: "100%",
+        videoId: id,
+        playerVars: playerVars({ autoplay: 1, start: Math.floor(start || 0) }),
+        events: {
+          onReady: function () {
+            playerReady = true;
+            if (pendingLoad && pendingLoad.id !== id) {
+              player.loadVideoById({ videoId: pendingLoad.id, startSeconds: pendingLoad.start || 0 });
+            }
+            pendingLoad = null;
+          },
+          onStateChange: onPlayerState,
+          onError: onPlayerError,
+        },
+      });
+    });
+  }
+
+  function onPlayerState(event) {
+    paintMiniIcon();
+    if (event.data === STATE.PLAYING) {
+      failCount = 0;
+      setStatus("", false);
+    } else if (event.data === STATE.ENDED) {
+      if (currentItem) {
+        savePosition(currentItem.id, 0, 0);
+      }
+      if (settings.autoplay && byId("autoplay").checked) {
+        playNext();
+      }
+    }
+  }
+
+  function onPlayerError(event) {
+    if (!currentItem) {
+      return;
+    }
+    failCount += 1;
+    var msg = embedError(event.data);
+    var auto = settings.autoplay && byId("autoplay").checked;
+    if (auto && failCount < MAX_AUTOSKIP && queue.length) {
+      setStatus(msg + " Playing the next one…", true);
+      setTimeout(playNext, 2000);
+    } else {
+      setStatus(msg, true);
+    }
+  }
+
+  function playing() {
+    return player && playerReady && player.getPlayerState && player.getPlayerState() === STATE.PLAYING;
+  }
+
+  // Remember where you are in each video, like the app does.
+  setInterval(function () {
+    if (currentItem && playing()) {
+      savePosition(currentItem.id, player.getCurrentTime(), player.getDuration());
+    }
+  }, 5000);
+
+  // ---- watch page ------------------------------------------------------
 
   function setQueueFrom(list, currentId) {
     var after = [];
@@ -790,50 +896,48 @@
   }
 
   function paintRating() {
-    YT.toggleClass(byId("btn-like"), "is-on", rating === "like");
-    YT.toggleClass(byId("btn-dislike"), "is-on", rating === "dislike");
-    // yt-dlp's count already includes the like you had when the page opened.
+    YTU.toggleClass(byId("btn-like"), "is-on", rating === "like");
+    YTU.toggleClass(byId("btn-dislike"), "is-on", rating === "dislike");
+    // The API's count already includes the like you had when the page opened.
     var likes = currentInfo ? currentInfo.likes : 0;
     if (likes) {
       likes += (rating === "like" ? 1 : 0) - (currentInfo.ratedBase === "like" ? 1 : 0);
     }
-    byId("like-count").textContent = likes ? YT.shortCount(likes) : "Like";
+    byId("like-count").textContent = likes ? YTU.shortCount(likes) : "Like";
   }
 
   function paintSubscribed() {
     var b = byId("btn-sub");
     b.textContent = subscribed ? "Subscribed" : "Subscribe";
-    YT.toggleClass(b, "is-on", subscribed);
+    YTU.toggleClass(b, "is-on", subscribed);
   }
 
   function paintWatchMeta(item, info) {
-    byId("now-playing").textContent = (info && info.title) || item.title || "Video";
-    byId("mini-title").textContent = (info && info.title) || item.title || "Video";
+    var title = (info && info.title) || item.title || "Video";
     var author = (info && info.author) || item.author || "";
+    byId("now-playing").textContent = title;
+    byId("mini-title").textContent = title;
     byId("mini-author").textContent = author;
-    var views = info ? info.views : item.views;
-    byId("watch-sub").textContent = YT.joinBits([
-      YT.formatViews(views),
-      info ? YT.timeAgo(info.uploadDate) : "",
+    byId("watch-sub").textContent = YTU.joinBits([
+      YTU.formatViews(info ? info.views : item.views),
+      info ? YTU.timeAgo(info.published) : "",
       info && info.description ? "...more" : "",
     ]);
     byId("channel-name").textContent = author || "YouTube";
-    byId("channel-subs").textContent = info && info.followers ? YT.shortCount(info.followers) + " subscribers" : "";
-    YT.avatarInto(byId("channel-avatar"), author, item.avatar, 0);
+    byId("channel-subs").textContent = "";
+    YTU.avatarInto(byId("channel-avatar"), author, item.avatar, 0);
   }
 
   function playItem(item) {
-    var video = byId("player");
-    if (currentItem && video.currentTime) {
-      savePosition(currentItem.id, video.currentTime, video.duration);
+    if (currentItem && playing()) {
+      savePosition(currentItem.id, player.getCurrentTime(), player.getDuration());
     }
     currentItem = item;
     currentInfo = null;
     rating = "none";
     subscribed = false;
     commentsNext = "";
-    prefetched = "";
-    byId("shorts-player").pause();
+    pauseShorts();
     closeSearch();
     show("watch", true);
     addClass(document.body, "watching");
@@ -844,24 +948,21 @@
     paintRating();
     paintSubscribed();
     byId("comments").innerHTML = "";
-    byId("comment-count").textContent = "";
     show("comments-more", false);
     setStatus("", false);
     window.scrollTo(0, 0);
     pushUnique("ytHistory", item, MAX_HISTORY);
 
     var saved = positions[item.id];
-    startVideo(settings.hd ? "hd" : "sd", saved && saved.t > 10 ? saved.t : 0);
+    loadIntoPlayer(item.id, saved && saved.t > 10 ? saved.t : 0);
 
-    var isLatest = YT.latest("watch");
-    YT.get("/api/video" + YT.q({ id: item.id }), function (info) {
+    var isLatest = YTU.latest("watch");
+    YTG.video(item.id, function (info) {
       if (!isLatest()) {
         return;
       }
       currentInfo = info;
-      if (!item.channelId && info.channelId) {
-        item.channelId = info.channelId;
-      }
+      item.channelId = item.channelId || info.channelId;
       item.title = info.title || item.title;
       item.author = info.author || item.author;
       item.duration = info.duration || item.duration;
@@ -869,83 +970,75 @@
       paintWatchMeta(item, info);
       byId("watch-desc").textContent = info.description || "";
       paintRating();
-      paintQuality();
       loadWatchExtras(item, info, isLatest);
     }, function (err) {
       if (isLatest()) {
         setStatus(err, true);
       }
     });
-
-    YT.get("/api/related" + YT.q({ id: item.id, q: item.title && item.title !== "Video" ? item.title : "" }), function (data) {
-      if (isLatest()) {
-        mergeQueue(data.results || []);
-      }
-    }, function () {});
   }
 
   function loadWatchExtras(item, info, isLatest) {
     if (info.channelId) {
-      YT.get("/api/channel" + YT.q({ id: info.channelId }), function (ch) {
+      YTG.channel(info.channelId, function (ch) {
         if (!isLatest()) {
           return;
         }
         if (ch.avatar) {
-          YT.avatarInto(byId("channel-avatar"), info.author, ch.avatar, 0);
+          YTU.avatarInto(byId("channel-avatar"), info.author, ch.avatar, 0);
         }
-        // The channel page's count is more reliable than the one in video metadata.
         if (ch.followers) {
-          byId("channel-subs").textContent = YT.shortCount(ch.followers) + " subscribers";
+          byId("channel-subs").textContent = YTU.shortCount(ch.followers) + " subscribers";
+        }
+      }, function () {});
+      // Up next continues with more from this channel (1 unit; a related-videos search would cost 100).
+      YTG.channelVideos(info.channelId, 15, function (more) {
+        if (isLatest()) {
+          mergeQueue(more);
         }
       }, function () {});
     }
+    byId("comments").innerHTML = "";
+    loadComments(item.id, "", isLatest);
     if (!signedIn()) {
-      paintCommentsSignedOut();
+      show("comment-box", false);
       return;
     }
-    YT.get("/api/me/state" + YT.q({ id: item.id, channel: info.channelId }), function (state) {
-      if (!isLatest()) {
-        return;
+    show("comment-box", true);
+    YTG.rating(item.id, function (value) {
+      if (isLatest()) {
+        rating = value;
+        currentInfo.ratedBase = value;
+        paintRating();
       }
-      rating = state.rating || "none";
-      currentInfo.ratedBase = rating;
-      subscribed = !!state.subscribed;
-      paintRating();
-      paintSubscribed();
     }, function () {});
-    loadComments(item.id, "", isLatest);
-  }
-
-  function paintCommentsSignedOut() {
-    var box = byId("comments");
-    box.innerHTML = "";
-    show("comment-box", false);
-    var b = el("button", "yt-signin-btn yt-signin-inline", "Sign in to see comments");
-    b.type = "button";
-    b.addEventListener("click", function () {
-      openSignIn();
-    });
-    box.appendChild(b);
+    if (info.channelId) {
+      YTG.subscriptionId(info.channelId, function (id) {
+        if (isLatest()) {
+          subscribed = !!id;
+          paintSubscribed();
+        }
+      }, function () {});
+    }
   }
 
   function commentNode(c) {
     var row = el("div", "yt-comment");
     var av = el("div", "yt-avatar yt-avatar-sm");
-    YT.avatarInto(av, c.author, c.avatar, 2);
+    YTU.avatarInto(av, c.author, c.avatar, 2);
     row.appendChild(av);
     var body = el("div", "yt-comment-body");
-    body.appendChild(el("div", "yt-comment-author", YT.joinBits([c.author, YT.timeAgo(c.published)])));
+    body.appendChild(el("div", "yt-comment-author", YTU.joinBits([c.author, YTU.timeAgo(c.published)])));
     body.appendChild(el("div", "yt-comment-text", c.text));
     body.appendChild(
-      el("div", "yt-comment-meta", YT.joinBits([c.likes ? YT.shortCount(c.likes) + " likes" : "", c.replies ? c.replies + " replies" : ""]))
+      el("div", "yt-comment-meta", YTU.joinBits([c.likes ? YTU.shortCount(c.likes) + " likes" : "", c.replies ? c.replies + " replies" : ""]))
     );
     row.appendChild(body);
     return row;
   }
 
   function loadComments(id, page, isLatest) {
-    show("comment-box", true);
-    YT.get("/api/me/comments" + YT.q({ id: id, page: page }), function (data) {
+    YTG.comments(id, page, function (data) {
       if (!isLatest()) {
         return;
       }
@@ -975,13 +1068,12 @@
 
   function postComment() {
     var input = byId("comment-text");
-    var text = YT.trim(input.value);
+    var text = YTU.trim(input.value);
     if (!text || !currentItem) {
       return;
     }
-    var id = currentItem.id;
     byId("comment-send").disabled = true;
-    YT.post("/api/me/comment", { id: id, text: text }, function (c) {
+    YTG.addComment(currentItem.id, text, function (c) {
       byId("comment-send").disabled = false;
       input.value = "";
       input.blur();
@@ -1005,7 +1097,7 @@
     var before = rating;
     rating = next === rating ? "none" : next;
     paintRating();
-    YT.post("/api/me/rate", { id: currentItem.id, rating: rating }, function () {
+    YTG.rate(currentItem.id, rating, function () {
       if (rating === "like") {
         toast("Added to Liked videos");
       }
@@ -1026,7 +1118,7 @@
       return;
     }
     done(on);
-    YT.post("/api/me/subscribe", { channelId: channelId, on: on }, function () {
+    YTG.subscribe(channelId, on, function () {
       toast(on ? "Subscription added" : "Subscription removed");
       byId("subs-feed").innerHTML = "";
     }, function (err) {
@@ -1050,14 +1142,13 @@
   }
 
   function closePlayer() {
-    var video = byId("player");
-    if (currentItem && video.currentTime) {
-      savePosition(currentItem.id, video.currentTime, video.duration);
+    if (currentItem && playing()) {
+      savePosition(currentItem.id, player.getCurrentTime(), player.getDuration());
     }
-    YT.latest("watch");
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
+    YTU.latest("watch");
+    if (player && playerReady) {
+      player.stopVideo();
+    }
     currentItem = null;
     removeClass(document.body, "watching");
     removeClass(document.body, "mini");
@@ -1068,71 +1159,9 @@
   }
 
   function paintMiniIcon() {
-    var video = byId("player");
-    byId("mini-play-icon").innerHTML = video.paused
-      ? '<path fill="currentColor" d="M8 5v14l11-7z"/>'
-      : '<path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
-  }
-
-  function wirePlayer() {
-    var video = byId("player");
-    video.addEventListener("loadedmetadata", function () {
-      if (pendingSeek && (!video.duration || pendingSeek < video.duration - 15)) {
-        try {
-          video.currentTime = pendingSeek;
-        } catch (err) {}
-      }
-      pendingSeek = 0;
-    });
-    video.addEventListener("playing", function () {
-      failCount = 0;
-      setStatus("", false);
-      paintMiniIcon();
-      // Warm up the next video on the Mac so it starts quickly.
-      if (queue[0] && prefetched !== queue[0].id) {
-        prefetched = queue[0].id;
-        YT.get("/api/prefetch" + YT.q({ id: queue[0].id, q: settings.hd ? "hd" : "sd" }), function () {}, function () {});
-      }
-    });
-    video.addEventListener("pause", paintMiniIcon);
-    video.addEventListener("timeupdate", function () {
-      var now = Date.now();
-      if (currentItem && now - lastSaved > 5000) {
-        lastSaved = now;
-        savePosition(currentItem.id, video.currentTime, video.duration);
-      }
-    });
-    video.addEventListener("ended", function () {
-      if (currentItem) {
-        savePosition(currentItem.id, 0, 0);
-      }
-      if (settings.autoplay && byId("autoplay").checked) {
-        playNext();
-      }
-    });
-    video.addEventListener("error", function () {
-      if (!currentItem || !video.getAttribute("src")) {
-        return;
-      }
-      // Step down HD (HLS) → 360p (HLS) → 360p MP4 through the Mac before giving up.
-      if (currentQuality === "hd" || currentQuality === "sd") {
-        startVideo(currentQuality === "hd" ? "sd" : "mp4", video.currentTime || pendingSeek);
-        return;
-      }
-      failCount += 1;
-      var auto = settings.autoplay && byId("autoplay").checked;
-      if (auto && failCount < MAX_AUTOSKIP && queue.length) {
-        setStatus("This video is unavailable. Playing the next one…", true);
-        setTimeout(playNext, 1500);
-      } else {
-        setStatus(
-          failCount >= MAX_AUTOSKIP
-            ? "Several videos in a row would not play. Check that the Mac is online and serve.sh is running."
-            : "This video is unavailable. Try another.",
-          true
-        );
-      }
-    });
+    byId("mini-play-icon").innerHTML = playing()
+      ? '<path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'
+      : '<path fill="currentColor" d="M8 5v14l11-7z"/>';
   }
 
   // ---- share / save / item menu ----------------------------------------
@@ -1218,21 +1247,18 @@
     body.appendChild(lists);
     body.appendChild(
       sheetButton("+ New playlist", function () {
-        var title = window.prompt("Playlist name");
-        if (!YT.trim(title)) {
+        var title = YTU.trim(window.prompt("Playlist name"));
+        if (!title) {
           return;
         }
-        YT.post("/api/me/playlist", { title: YT.trim(title) }, function (pl) {
+        YTG.createPlaylist(title, function (pl) {
           saveToPlaylist(item, pl.id, pl.title);
-        }, function (err) {
-          toast(err);
-        });
+        }, toast);
       })
     );
     openSheet("Save video to…", body);
-    YT.get("/api/me/playlists", function (data) {
+    YTG.playlists(function (all) {
       lists.innerHTML = "";
-      var all = data.playlists || [];
       var i;
       for (i = 0; i < all.length; i++) {
         (function (pl) {
@@ -1251,11 +1277,9 @@
 
   function saveToPlaylist(item, playlistId, title) {
     closeSheet();
-    YT.post("/api/me/save", { id: item.id, playlistId: playlistId }, function () {
+    YTG.save(item.id, playlistId, function () {
       toast("Saved to " + title);
-    }, function (err) {
-      toast(err);
-    });
+    }, toast);
   }
 
   function openItemMenu(item, context) {
@@ -1316,31 +1340,36 @@
 
   // ---- Shorts ----------------------------------------------------------
 
-  function toggleShortsMode(on) {
-    YT.toggleClass(document.body, "shorts-mode", on);
-  }
-
   function loadShorts() {
-    var key = settings.topic + "|" + (signedIn() ? "in" : "out");
-    if (shorts.length && shortsLoadedFor === key) {
-      showShort(shortIndex, false);
+    if (!YTG.canBrowse()) {
+      setStatus("Sign in or add an API key first (see You).", true);
       return;
     }
-    var isLatest = YT.latest("shorts");
+    var key = settings.topic;
+    if (shorts.length && shortsLoadedFor === key) {
+      showShort(shortIndex);
+      return;
+    }
+    var isLatest = YTU.latest("shorts");
     setStatus("Loading Shorts…", false);
-    YT.get("/api/shorts" + YT.q({ topic: settings.topic }), function (data) {
+    YTG.search(YTU.trim(settings.topic) + " #shorts", { short: true }, function (results) {
       if (!isLatest()) {
         return;
       }
       setStatus("", false);
-      shorts = data.results || [];
+      shorts = [];
+      for (var i = 0; i < results.length; i++) {
+        if (results[i].duration && results[i].duration <= 180) {
+          shorts.push(results[i]);
+        }
+      }
       shortsLoadedFor = key;
       shortIndex = 0;
       if (!shorts.length) {
         setStatus("No Shorts right now. Try again later.", true);
         return;
       }
-      showShort(0, false);
+      showShort(0);
     }, function (err) {
       if (isLatest()) {
         setStatus(err, true);
@@ -1348,93 +1377,70 @@
     });
   }
 
-  function showShort(index, play) {
+  function showShort(index) {
     if (!shorts.length) {
       return;
     }
     shortIndex = (index + shorts.length) % shorts.length;
     var item = shorts[shortIndex];
-    var video = byId("shorts-player");
-    if (video.getAttribute("data-id") !== item.id) {
-      video.setAttribute("data-id", item.id);
-      video.poster = YT.thumbUrl(item.id);
-      video.src = playSource(item.id, settings.hd ? "hd" : "sd");
-    }
     byId("shorts-author").textContent = item.author ? "@" + item.author.replace(/\s+/g, "") : "";
     byId("shorts-title").textContent = item.title || "";
-    YT.toggleClass(byId("shorts-like"), "is-on", !!shortRated[item.id]);
-    if (play) {
-      playShort();
-    } else {
-      show("shorts-tap", true);
+    YTU.toggleClass(byId("shorts-like"), "is-on", !!shortRated[item.id]);
+    pushUnique("ytHistory", item, MAX_HISTORY);
+    if (shortsPlayer && shortsReady) {
+      shortsPlayer.loadVideoById(item.id);
+      return;
     }
-    var next = shorts[(shortIndex + 1) % shorts.length];
-    if (next && next.id !== item.id) {
-      YT.get("/api/prefetch" + YT.q({ id: next.id, q: settings.hd ? "hd" : "sd" }), function () {}, function () {});
+    if (shortsPlayer) {
+      return;
     }
-  }
-
-  function playShort() {
-    var video = byId("shorts-player");
-    byId("player").pause();
-    show("shorts-tap", false);
-    var played = video.play();
-    if (played && played["catch"]) {
-      played["catch"](function () {
-        show("shorts-tap", true);
+    whenApi(function () {
+      shortsPlayer = new window.YT.Player("shorts-player", {
+        width: "100%",
+        height: "100%",
+        videoId: item.id,
+        playerVars: playerVars({ autoplay: 1, controls: 0 }),
+        events: {
+          onReady: function () {
+            shortsReady = true;
+            var want = shorts[shortIndex];
+            if (want && want.id !== item.id) {
+              shortsPlayer.loadVideoById(want.id);
+            }
+          },
+          onStateChange: function (event) {
+            // Shorts loop, like the app.
+            if (event.data === STATE.ENDED) {
+              shortsPlayer.seekTo(0);
+              shortsPlayer.playVideo();
+            }
+          },
+          onError: function () {
+            showShort(shortIndex + 1);
+          },
+        },
       });
-    }
-    if (shorts[shortIndex]) {
-      pushUnique("ytHistory", shorts[shortIndex], MAX_HISTORY);
-    }
-  }
-
-  function toggleShort() {
-    var video = byId("shorts-player");
-    if (video.paused) {
-      playShort();
-    } else {
-      video.pause();
-      show("shorts-tap", true);
-    }
+    });
   }
 
   function wireShorts() {
-    var view = byId("view-shorts");
+    // The video itself is YouTube's iframe and takes its own taps; swipe on the caption area.
+    var zone = byId("shorts-swipe");
     var startY = 0;
-    var startX = 0;
-    var moved = false;
-    view.addEventListener("touchstart", function (event) {
+    zone.addEventListener("touchstart", function (event) {
       startY = event.touches[0].clientY;
-      startX = event.touches[0].clientX;
-      moved = false;
     });
-    view.addEventListener("touchmove", function (event) {
-      moved = true;
-      event.preventDefault();
-    });
-    view.addEventListener("touchend", function (event) {
-      if (event.target.closest && event.target.closest(".yt-shorts-side")) {
-        return;
-      }
-      var touch = event.changedTouches[0];
-      var dy = touch.clientY - startY;
-      var dx = touch.clientX - startX;
-      event.preventDefault();
-      if (moved && Math.abs(dy) > 50 && Math.abs(dy) > Math.abs(dx)) {
-        // touchend counts as a user gesture, so iOS lets the next Short start with sound.
-        showShort(shortIndex + (dy < 0 ? 1 : -1), true);
-      } else if (!moved) {
-        toggleShort();
+    zone.addEventListener("touchend", function (event) {
+      var dy = event.changedTouches[0].clientY - startY;
+      if (Math.abs(dy) > 40) {
+        showShort(shortIndex + (dy < 0 ? 1 : -1));
       }
     });
-    // Mouse fallback; on iOS touchend above handles taps and blocks this click.
-    byId("shorts-tap").addEventListener("click", toggleShort);
     byId("shorts-next").addEventListener("click", function () {
-      showShort(shortIndex + 1, true);
+      showShort(shortIndex + 1);
     });
     byId("shorts-prev").addEventListener("click", function () {
-      showShort(shortIndex - 1, true);
+      showShort(shortIndex - 1);
     });
     byId("shorts-share").addEventListener("click", function () {
       if (shorts[shortIndex]) {
@@ -1452,21 +1458,12 @@
       }
       var on = !shortRated[item.id];
       shortRated[item.id] = on;
-      YT.toggleClass(byId("shorts-like"), "is-on", on);
-      YT.post("/api/me/rate", { id: item.id, rating: on ? "like" : "none" }, function () {}, function (err) {
+      YTU.toggleClass(byId("shorts-like"), "is-on", on);
+      YTG.rate(item.id, on ? "like" : "none", function () {}, function (err) {
         shortRated[item.id] = !on;
-        YT.toggleClass(byId("shorts-like"), "is-on", !on);
+        YTU.toggleClass(byId("shorts-like"), "is-on", !on);
         toast(err);
       });
-    });
-    byId("shorts-player").addEventListener("error", function () {
-      var video = byId("shorts-player");
-      var src = video.getAttribute("src") || "";
-      var next = src.indexOf("q=hd") !== -1 ? "sd" : src.indexOf("q=sd") !== -1 ? "mp4" : "";
-      if (next) {
-        video.src = playSource(video.getAttribute("data-id"), next);
-        playShort();
-      }
     });
   }
 
@@ -1486,23 +1483,22 @@
   function openSignIn() {
     show("sign-sheet", true);
     clearTimeout(pollTimer);
-    if (!auth.configured) {
+    if (!YTG.canSignIn()) {
       signBody([
-        el("p", "", "Google sign-in isn't set up on the Mac yet."),
-        el("p", "", "On the Mac, follow \"Google sign-in\" in the README, then restart serve.sh."),
+        el("p", "", "Google sign-in isn't set up yet."),
+        el("p", "", "Add your Google client ID and secret to apps/js/config.js (see the README)."),
       ]);
       return;
     }
     signBody([el("p", "", "Getting a sign-in code…")]);
-    var isLatest = YT.latest("signin");
-    YT.post("/api/auth/start", {}, function (flow) {
+    var isLatest = YTU.latest("signin");
+    YTG.startSignIn(function (flow) {
       if (!isLatest()) {
         return;
       }
-      var url = flow.url.replace(/^https?:\/\/(www\.)?/, "");
       var step1 = el("p", "");
       step1.appendChild(document.createTextNode("1. On your phone or computer, go to "));
-      var link = el("a", "", url);
+      var link = el("a", "", flow.url.replace(/^https?:\/\/(www\.)?/, ""));
       link.href = flow.url;
       link.target = "_blank";
       step1.appendChild(link);
@@ -1512,7 +1508,7 @@
         el("div", "yt-device-code", flow.code),
         el("p", "yt-sign-wait", "Waiting for you to finish signing in…"),
       ]);
-      pollSignIn(flow.flow, flow.interval, isLatest);
+      pollSignIn(flow, isLatest);
     }, function (err) {
       if (isLatest()) {
         signBody([el("p", "", err), sheetButton("Try again", openSignIn)]);
@@ -1520,80 +1516,56 @@
     });
   }
 
-  function pollSignIn(flowId, interval, isLatest) {
+  function pollSignIn(flow, isLatest) {
     pollTimer = setTimeout(function () {
       if (!isLatest() || hasClass(byId("sign-sheet"), "hidden")) {
         return;
       }
-      YT.post("/api/auth/poll", { flow: flowId }, function (res) {
+      YTG.pollSignIn(flow, function (status, extra) {
         if (!isLatest()) {
           return;
         }
-        if (res.status === "pending") {
-          pollSignIn(flowId, res.interval || interval, isLatest);
-        } else if (res.status === "done") {
-          YT.setSession(res.session);
-          auth.profile = res.profile;
-          YT.store("ytProfile", res.profile);
+        if (status === "pending") {
+          pollSignIn(flow, isLatest);
+        } else if (status === "done") {
           show("sign-sheet", false);
-          toast("Signed in as " + res.profile.name);
+          toast("Signed in as " + extra.name);
           afterAccountChange();
         } else {
-          var msg = res.status === "denied" ? "Sign-in was cancelled." : res.status === "expired" ? "The code expired." : res.message || "Sign-in failed.";
+          var msg = status === "denied" ? "Sign-in was cancelled." : status === "expired" ? "The code expired." : extra || "Sign-in failed.";
           signBody([el("p", "", msg), sheetButton("Try again", openSignIn)]);
         }
-      }, function () {
-        pollSignIn(flowId, interval, isLatest);
       });
-    }, Math.max(2, interval || 5) * 1000);
+    }, Math.max(2, flow.interval || 5) * 1000);
   }
 
   function signOut() {
-    if (!window.confirm("Sign out of your Google account on this Mac and iPad?")) {
+    if (!window.confirm("Sign out of your Google account on this iPad?")) {
       return;
     }
-    YT.post("/api/auth/signout", {}, function () {}, function () {});
-    YT.setSession("");
-    auth.profile = null;
-    YT.store("ytProfile", null);
-    afterAccountChange();
+    YTG.signOut();
     toast("Signed out");
   }
 
   function afterAccountChange() {
     paintAccount();
     byId("subs-feed").innerHTML = "";
-    shortsLoadedFor = "";
+    byId("home-feed").innerHTML = "";
     if (listLoader) {
       runList(byId("list-title").textContent, listLoader);
-    } else if (currentTab !== "home") {
-      setTab(currentTab);
+    } else {
+      setTab(currentTab, true);
     }
     if (currentItem && currentInfo) {
-      loadWatchExtras(currentItem, currentInfo, YT.latest("watch"));
+      loadWatchExtras(currentItem, currentInfo, YTU.latest("watch"));
     }
-  }
-
-  function checkAuth() {
-    YT.get("/api/auth/status", function (data) {
-      auth.configured = !!data.configured;
-      if (data.signedIn) {
-        auth.profile = data.profile;
-        YT.store("ytProfile", data.profile);
-      } else if (YT.hasSession() || auth.profile) {
-        YT.setSession("");
-        auth.profile = null;
-        YT.store("ytProfile", null);
-      }
-      paintAccount();
-    }, function () {});
   }
 
   // ---- startup -----------------------------------------------------------
 
   function playPasted(event) {
     event.preventDefault();
-    var id = YT.extractVideoId(byId("url").value);
+    var id = YTU.extractVideoId(byId("url").value);
     if (!id) {
       setStatus("Paste a full YouTube link.", true);
       return;
@@ -1626,14 +1598,11 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     if (location.protocol !== "http:" && location.protocol !== "https:") {
-      setStatus("Open this page from the Mac (serve.sh), not from Files.", true);
+      setStatus("Open this app from its web address and add it to the Home Screen; YouTube's player doesn't work from Files.", true);
       return;
     }
-    YT.onSignedOut(function () {
-      auth.profile = null;
-      YT.store("ytProfile", null);
-      paintAccount();
-      toast("You were signed out");
+    YTG.onSignedOut(function () {
+      afterAccountChange();
     });
 
     on("search-form", "submit", function (event) {
@@ -1657,11 +1626,13 @@
     on("watch-collapse", "click", shrinkToMini);
     on("mini-open", "click", expandFromMini);
     on("mini-toggle", "click", function () {
-      var video = byId("player");
-      if (video.paused) {
-        video.play();
+      if (!player || !playerReady) {
+        return;
+      }
+      if (playing()) {
+        player.pauseVideo();
       } else {
-        video.pause();
+        player.playVideo();
       }
     });
     on("mini-close", "click", closePlayer);
@@ -1685,26 +1656,6 @@
         openSaveSheet(currentItem);
       }
     });
-    on("btn-quality", "click", function () {
-      if (!currentItem) {
-        return;
-      }
-      if (currentInfo && currentInfo.hd === false) {
-        toast("HD isn't available for this video");
-        return;
-      }
-      startVideo(currentQuality === "hd" ? "sd" : "hd", byId("player").currentTime);
-      toast(currentQuality === "hd" ? "Quality: HD" : "Quality: 360p");
-    });
-    var video = byId("player");
-    if (video.webkitSupportsPresentationMode && video.webkitSupportsPresentationMode("picture-in-picture")) {
-      show("btn-pip", true);
-      on("btn-pip", "click", function () {
-        video.webkitSetPresentationMode(
-          video.webkitPresentationMode === "picture-in-picture" ? "inline" : "picture-in-picture"
-        );
-      });
-    }
     on("channel-open", "click", function () {
       if (currentItem) {
         openChannel(currentItem.channelId, currentItem.author);
@@ -1724,7 +1675,7 @@
     });
     on("comments-more", "click", function () {
       if (currentItem && commentsNext) {
-        loadComments(currentItem.id, commentsNext, YT.latest("watch-comments"));
+        loadComments(currentItem.id, commentsNext, YTU.latest("watch-comments"));
       }
     });
     on("autoplay", "change", function () {
@@ -1735,7 +1686,7 @@
 
     on("sign-cancel", "click", function () {
       clearTimeout(pollTimer);
-      YT.latest("signin");
+      YTU.latest("signin");
       show("sign-sheet", false);
     });
     on("sign-out", "click", signOut);
@@ -1746,26 +1697,22 @@
       }
     });
 
-    on("set-hd", "change", function () {
-      settings.hd = byId("set-hd").checked;
-      saveSettings();
-    });
     on("set-autoplay", "change", function () {
       settings.autoplay = byId("set-autoplay").checked;
       byId("autoplay").checked = settings.autoplay;
       saveSettings();
     });
     on("set-topic", "change", function () {
-      settings.topic = YT.trim(byId("set-topic").value) || "Tamil";
+      settings.topic = YTU.trim(byId("set-topic").value) || "Tamil";
       saveSettings();
       byId("home-feed").innerHTML = "";
       toast("Home will show " + settings.topic + " videos");
     });
     on("clear-history", "click", function () {
       if (window.confirm("Clear watch history on this iPad?")) {
-        YT.store("ytHistory", []);
+        YTU.store("ytHistory", []);
         positions = {};
-        YT.store("ytPos", positions);
+        YTU.store("ytPos", positions);
         paintYou();
       }
     });
@@ -1790,12 +1737,10 @@
     }
 
     byId("autoplay").checked = !!settings.autoplay;
-    wirePlayer();
     wireShorts();
     wireAppCache();
     paintChips();
     paintAccount();
-    checkAuth();
     setTab("home", true);
   });
 })();

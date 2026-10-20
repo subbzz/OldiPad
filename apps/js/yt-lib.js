@@ -1,5 +1,6 @@
-/* Shared helpers for the YouTube page. ES5 only: this runs on iOS 12 Safari. */
-var YT = (function () {
+/* Shared helpers for the YouTube page. ES5 only: this runs on iOS 12 Safari.
+ * Named YTU because YouTube's player script owns the global YT. */
+var YTU = (function () {
   "use strict";
 
   var COLORS = ["#c00", "#065fd4", "#065", "#e37400", "#7e37d8"];
@@ -190,72 +191,73 @@ var YT = (function () {
 
   // ---- network ----------------------------------------------------------
 
-  var session = load("ytSession", "");
-  var onSignedOut = null;
-
-  function request(method, url, body, onOk, onErr) {
-    var xhr = new XMLHttpRequest();
-    xhr.open(method, url, true);
-    xhr.timeout = 60000;
-    if (session) {
-      xhr.setRequestHeader("X-Session", session);
-    }
-    if (body) {
-      xhr.setRequestHeader("Content-Type", "application/json");
+  function xhr(method, url, headers, body, onOk, onErr) {
+    var req = new XMLHttpRequest();
+    req.open(method, url, true);
+    req.timeout = 30000;
+    var name;
+    for (name in headers || {}) {
+      if (headers.hasOwnProperty(name)) {
+        req.setRequestHeader(name, headers[name]);
+      }
     }
     var done = false;
-    function fail(message, status) {
+    function finish(fn, a, b) {
       if (!done) {
         done = true;
-        if (onErr) {
-          onErr(message, status);
-        }
+        fn(a, b);
       }
     }
-    xhr.onreadystatechange = function () {
-      if (xhr.readyState !== 4 || done) {
-        return;
-      }
-      if (xhr.status === 0) {
-        return; // onerror / ontimeout report it
+    req.onreadystatechange = function () {
+      if (req.readyState !== 4 || req.status === 0) {
+        return; // onerror / ontimeout report network failures
       }
       var data = null;
       try {
-        data = JSON.parse(xhr.responseText);
+        data = req.responseText ? JSON.parse(req.responseText) : {};
       } catch (err) {}
-      if (xhr.status >= 200 && xhr.status < 300 && data) {
-        done = true;
-        onOk(data);
-        return;
+      if (req.status >= 200 && req.status < 300) {
+        finish(onOk, data || {});
+      } else {
+        finish(onErr, data || {}, req.status);
       }
-      if (xhr.status === 401 && session && url.indexOf("/api/me/") === 0) {
-        setSession("");
-        if (onSignedOut) {
-          onSignedOut();
-        }
+    };
+    req.onerror = function () {
+      finish(onErr, { offline: true }, 0);
+    };
+    req.ontimeout = function () {
+      finish(onErr, { offline: true }, 0);
+    };
+    req.send(body || null);
+  }
+
+  // Google's search suggestions have no CORS headers, but they do support JSONP.
+  var jsonpCount = 0;
+  function jsonp(url, onOk, onErr) {
+    jsonpCount += 1;
+    var name = "ytJsonp" + jsonpCount;
+    var script = document.createElement("script");
+    var timer = setTimeout(function () {
+      cleanup();
+      onErr();
+    }, 8000);
+    function cleanup() {
+      clearTimeout(timer);
+      window[name] = function () {};
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
       }
-      fail((data && data.error) || "Something went wrong (HTTP " + xhr.status + ")", xhr.status);
+    }
+    window[name] = function (data) {
+      cleanup();
+      onOk(data);
     };
-    xhr.onerror = function () {
-      fail("Can't reach the Mac. Is serve.sh running?", 0);
+    script.src = url + (url.indexOf("?") === -1 ? "?" : "&") + "callback=" + name;
+    script.onerror = function () {
+      cleanup();
+      onErr();
     };
-    xhr.ontimeout = function () {
-      fail("The Mac took too long to answer. Try again.", 0);
-    };
-    xhr.send(body ? JSON.stringify(body) : null);
-  }
-
-  function get(url, onOk, onErr) {
-    request("GET", url, null, onOk, onErr);
-  }
-
-  function post(url, body, onOk, onErr) {
-    request("POST", url, body || {}, onOk, onErr);
-  }
-
-  function setSession(value) {
-    session = value || "";
-    store("ytSession", session || null);
+    document.body.appendChild(script);
   }
 
   // Only the newest request for a given slot may paint; older replies are dropped.
@@ -279,6 +281,43 @@ var YT = (function () {
     return parts.length ? "?" + parts.join("&") : "";
   }
 
+  // ---- response cache in localStorage (saves YouTube API quota) ---------
+
+  var CACHE_PREFIX = "ytc:";
+
+  function cacheGet(key) {
+    var hit = load(CACHE_PREFIX + key, null);
+    return hit && hit.until > Date.now() ? hit.value : null;
+  }
+
+  function cachePut(key, value, seconds) {
+    try {
+      localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ until: Date.now() + seconds * 1000, value: value }));
+    } catch (err) {
+      // Storage full: drop every cached response and try once more.
+      cacheClear();
+      try {
+        localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ until: Date.now() + seconds * 1000, value: value }));
+      } catch (err2) {}
+    }
+  }
+
+  function cacheClear(prefix) {
+    var drop = [];
+    var i;
+    try {
+      for (i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(CACHE_PREFIX + (prefix || "")) === 0) {
+          drop.push(k);
+        }
+      }
+      for (i = 0; i < drop.length; i++) {
+        localStorage.removeItem(drop[i]);
+      }
+    } catch (err) {}
+  }
+
   return {
     byId: byId,
     hasClass: hasClass,
@@ -298,16 +337,12 @@ var YT = (function () {
     extractVideoId: extractVideoId,
     thumbUrl: thumbUrl,
     avatarInto: avatarInto,
-    get: get,
-    post: post,
+    xhr: xhr,
+    jsonp: jsonp,
     q: q,
     latest: latest,
-    setSession: setSession,
-    hasSession: function () {
-      return !!session;
-    },
-    onSignedOut: function (fn) {
-      onSignedOut = fn;
-    },
+    cacheGet: cacheGet,
+    cachePut: cachePut,
+    cacheClear: cacheClear,
   };
 })();

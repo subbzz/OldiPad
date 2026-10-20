@@ -29,7 +29,7 @@
       new YT.Player("player", {
         width: "720",
         height: "405",
-        videoId: "dQw4w9WgXcQ",
+        videoId: (location.search.match(/v=([A-Za-z0-9_-]{11})/) || [0, "jNQXAC9IVRw"])[1],
         playerVars: { playsinline: 1, rel: 0 },
         events: {
           onReady: function () {

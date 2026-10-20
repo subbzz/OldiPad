@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Write an unsigned iOS web-clip profile with the current LAN launcher URL."""
+"""Write an unsigned iOS web-clip profile pointing at the published apps."""
 from __future__ import annotations
 
 import argparse
 import plistlib
+import re
 import subprocess
 import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ICONS = ROOT / "apps" / "icons"
-OUT = ROOT / "profiles" / "home-screen.mobileconfig"
+OUT = ROOT / "apps" / "home-screen.mobileconfig"
 
 
 def b64_png(name: str) -> bytes:
@@ -34,24 +35,29 @@ def webclip(label: str, url: str, icon_name: str, ident: str) -> dict:
     }
 
 
-def default_base() -> str:
-    """http://<this Mac>.local:8080, which keeps working when the Mac's IP changes."""
+def default_site() -> str:
+    """The GitHub Pages address of this repo, e.g. https://subbzz.github.io/OldiPad."""
     try:
-        host = subprocess.run(
-            ["scutil", "--get", "LocalHostName"], text=True, capture_output=True, check=True
+        remote = subprocess.run(
+            ["git", "-C", str(ROOT), "remote", "get-url", "origin"], text=True, capture_output=True, check=True
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
-        host = "MacBook-Pro"
-    return "http://%s.local:8080" % host
+        remote = ""
+    match = re.search(r"github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$", remote)
+    if not match:
+        raise SystemExit("No GitHub remote found; pass --site-url https://USER.github.io/REPO")
+    return "https://%s.github.io/%s" % (match.group(1).lower(), match.group(2))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", default="", help="http://HOST.local:PORT of serve.sh")
+    parser.add_argument("--site-url", default="", help="where apps/ is published (default: this repo's GitHub Pages)")
+    parser.add_argument("--out", default=str(OUT), help="profile file to write")
     args = parser.parse_args()
-    base = (args.base_url or default_base()).rstrip("/")
+    site = (args.site_url or default_site()).rstrip("/")
+    out = Path(args.out)
 
-    youtube_url = base + "/apps/youtube.html"
+    youtube_url = site + "/youtube.html"
     clips = [
         webclip(
             "YouTube",
@@ -94,7 +100,7 @@ def main() -> None:
         0,
         webclip(
             "Launcher",
-            base + "/apps/",
+            site + "/",
             "launcher.png",
             "com.oldipad.webclip.launcher",
         ),
@@ -112,11 +118,11 @@ def main() -> None:
         "PayloadVersion": 1,
     }
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
     # iOS expects XML plist; plistlib writes bytes icons as <data>
     xml = plistlib.dumps(payload, fmt=plistlib.FMT_XML)
-    OUT.write_bytes(xml)
-    print("Wrote", OUT, "launcher URL", base + "/apps/")
+    out.write_bytes(xml)
+    print("Wrote", out, "for", site + "/")
 
 
 if __name__ == "__main__":

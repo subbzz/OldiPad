@@ -66,8 +66,10 @@ Every push to `main` publishes `apps/` to `https://subbzz.github.io/OldiPad/`
 2. Share → **Add to Home Screen**. Open it from the Home Screen and sign in
    there (Home Screen apps keep a separate sign-in from Safari).
 
-Or add all the icons at once: open `https://subbzz.github.io/OldiPad/home-screen.mobileconfig`
-in Safari, then Settings → Profile Downloaded → Install.
+Or add all the icons at once over USB (GitHub Pages can't serve the profile in a
+way Safari installs): plug the iPad into the Mac, run
+`python3 scripts/install_to_ipad.py`, then on the iPad tap Settings → Profile
+Downloaded → Install.
 
 Updates arrive by themselves: the next time the app opens online it downloads
 the new version and reloads.

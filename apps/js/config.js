@@ -1,7 +1,6 @@
-/* Your Google Cloud keys. See README → "Google setup". These are safe to publish
- * once restricted as the README says: the API key only works from your
- * GitHub Pages address, and the "TVs and Limited Input" client secret is not
- * treated as secret by Google. */
+/* Google keys. Leave these empty in git: the publish workflow fills them in from
+ * the repository secrets YT_API_KEY, YT_CLIENT_ID and YT_CLIENT_SECRET (see README).
+ * To test on the Mac, fill them in locally and don't commit the change. */
 var YT_CONFIG = {
   // API key restricted to HTTP referrer https://<you>.github.io/* and to YouTube Data API v3.
   apiKey: "",

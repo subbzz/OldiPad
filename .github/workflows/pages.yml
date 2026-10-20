@@ -30,6 +30,12 @@ jobs:
           python3 scripts/make_profile.py --site-url "https://${owner}.github.io/${repo}"
           # A new revision line makes iPads download the new version.
           sed -i "2i # rev ${GITHUB_SHA}" apps/cache.appcache
+      - name: Add Google keys from repository secrets
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+        run: python3 scripts/write_config.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

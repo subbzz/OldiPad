@@ -42,10 +42,20 @@ The app talks to Google directly, so it needs a free Google Cloud project.
    (in "Testing" Google signs you out every 7 days; the "not verified" warning
    at sign-in is expected, tap Continue). Then Credentials → Create credentials →
    OAuth client ID, type **TVs and Limited Input devices**.
-4. Put the API key, client ID, and client secret in
-   [`apps/js/config.js`](apps/js/config.js), commit, and push. Publishing them
-   is OK: the key only works from your Pages address, and Google doesn't treat
-   this client type's secret as secret.
+4. Store the three values as GitHub repository secrets (never in the code; GitHub
+   blocks pushes that contain them). Run each command and paste the value when asked:
+
+   ```bash
+   gh secret set YT_API_KEY
+   gh secret set YT_CLIENT_ID
+   gh secret set YT_CLIENT_SECRET
+   gh workflow run pages.yml
+   ```
+
+   The publish workflow writes them into the site's `config.js`. They are visible
+   to anyone who opens the site (any browser app's keys are), which is fine: the
+   API key only works from your Pages address, and Google doesn't treat this
+   client type's secret as secret.
 
 Sign-in shows a code on the iPad; you enter it at google.com/device on your
 phone (the iPad's Safari is too old for Google's sign-in page). Your sign-in

@@ -41,6 +41,7 @@
   var subscribed = false;
   var failCount = 0;
   var commentsNext = "";
+  var commentsFor = null;
   var reloadWhenIdle = false;
 
   // Shorts state. Shorts reuse the one YouTube player: starting a player costs
@@ -868,8 +869,17 @@
     renderUpNext();
   }
 
+  // Up next is drawn shortly after a video starts and kept short: building
+  // these cards while YouTube's player loads was most of the switching lag on
+  // an iPad mini 2.
+  var upNextTimer = null;
   function renderUpNext() {
-    renderCards(byId("upnext"), queue.slice(0, 30), "compact", "", "Up next");
+    clearTimeout(upNextTimer);
+    upNextTimer = setTimeout(drawUpNext, 1200);
+  }
+
+  function drawUpNext() {
+    renderCards(byId("upnext"), queue.slice(0, 12), "compact", "", "Up next");
     var first = byId("upnext").firstChild;
     if (first) {
       addClass(first, "is-next");
@@ -954,6 +964,7 @@
     rating = "none";
     subscribed = false;
     commentsNext = "";
+    commentsFor = null;
     pauseShorts();
     closeSearch();
     show("watch", true);
@@ -987,7 +998,11 @@
       paintWatchMeta(item, info);
       byId("watch-desc").textContent = info.description || "";
       paintRating();
-      loadWatchExtras(item, info, isLatest);
+      setTimeout(function () {
+        if (isLatest()) {
+          loadWatchExtras(item, info, isLatest);
+        }
+      }, 1500);
     }, function (err) {
       if (isLatest()) {
         setStatus(err, true);
@@ -1015,13 +1030,15 @@
         }
       }, function () {});
     }
+    // Comments load when asked for, not with every video (saves time and quota).
     byId("comments").innerHTML = "";
-    loadComments(item.id, "", isLatest);
+    show("comments-more", false);
+    show("comments-open", true);
+    commentsFor = isLatest;
+    show("comment-box", false);
     if (!signedIn()) {
-      show("comment-box", false);
       return;
     }
-    show("comment-box", true);
     YTG.rating(item.id, function (value) {
       if (isLatest()) {
         rating = value;
@@ -1052,6 +1069,15 @@
     );
     row.appendChild(body);
     return row;
+  }
+
+  function openComments() {
+    if (!currentItem || !commentsFor) {
+      return;
+    }
+    show("comments-open", false);
+    show("comment-box", signedIn());
+    loadComments(currentItem.id, "", commentsFor);
   }
 
   function loadComments(id, page, isLatest) {
@@ -1659,6 +1685,7 @@
         postComment();
       }
     });
+    on("comments-open", "click", openComments);
     on("comments-more", "click", function () {
       if (currentItem && commentsNext) {
         loadComments(currentItem.id, commentsNext, YTU.latest("watch-comments"));

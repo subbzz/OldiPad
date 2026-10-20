@@ -114,6 +114,37 @@
     show("player-busy", on);
   }
 
+  // Lock 16:9 height in pixels from the player column width (vw jumps on iOS when the viewport shifts).
+  var playerFrameTimer = null;
+  function lockPlayerFrame() {
+    var wrap = byId("player-wrap");
+    if (!wrap) {
+      return;
+    }
+    var w = wrap.offsetWidth;
+    if (!w) {
+      w = document.documentElement.clientWidth || window.innerWidth;
+    }
+    wrap.style.height = Math.round((w * 9) / 16) + "px";
+  }
+
+  function schedulePlayerFrameLock() {
+    lockPlayerFrame();
+    clearTimeout(playerFrameTimer);
+    playerFrameTimer = setTimeout(function () {
+      lockPlayerFrame();
+      setTimeout(lockPlayerFrame, 120);
+    }, 0);
+  }
+
+  function clearPlayerFrameLock() {
+    clearTimeout(playerFrameTimer);
+    var wrap = byId("player-wrap");
+    if (wrap) {
+      wrap.style.height = "";
+    }
+  }
+
   function finishLoadingUi() {
     hideBoot();
     setStatus("", false);
@@ -706,6 +737,9 @@
       show(wrap, false);
       return;
     }
+    show(wrap, true);
+    box.innerHTML = "";
+    box.appendChild(el("p", "yt-empty-line", "Loading playlists…"));
     var isLatest = YTU.latest("playlists");
     syncWatchLaterIds();
     YTG.playlists(function (lists) {
@@ -713,7 +747,16 @@
         return;
       }
       box.innerHTML = "";
-      show(wrap, lists.length > 0);
+      if (!lists.length) {
+        box.appendChild(
+          el(
+            "p",
+            "yt-empty-line",
+            "No playlists yet. Use Save on a video, or create playlists at youtube.com (same Google account)."
+          )
+        );
+        return;
+      }
       var j;
       for (j = 0; j < lists.length; j++) {
         (function (pl) {
@@ -733,7 +776,14 @@
           box.appendChild(b);
         })(lists[j]);
       }
-    }, function () {}, true);
+    }, function (err) {
+      if (!isLatest()) {
+        return;
+      }
+      box.innerHTML = "";
+      box.appendChild(el("p", "yt-empty-line", err || "Couldn't load playlists."));
+      toast(err || "Couldn't load playlists.");
+    }, true);
   }
 
   function openNamed(name) {
@@ -807,9 +857,31 @@
         text.appendChild(el("p", "", ch.followers ? YTU.shortCount(ch.followers) + " subscribers" : ""));
         head.appendChild(text);
         head.appendChild(subscribeButton(channelId));
-        YTG.channelVideos(channelId, 30, function (items) {
-          ok(items, "This channel has no videos.", head);
-        }, fail);
+        YTG.channelPlaylists(channelId, function (pls) {
+          if (pls.length) {
+            var row = el("div", "yt-channel-pl-row");
+            var p;
+            for (p = 0; p < pls.length; p++) {
+              (function (pl) {
+                var btn = el("button");
+                btn.type = "button";
+                btn.textContent = pl.title + (pl.count ? " (" + pl.count + ")" : "");
+                btn.addEventListener("click", function () {
+                  openPlaylist(pl.id, pl.title);
+                });
+                row.appendChild(btn);
+              })(pls[p]);
+            }
+            head.appendChild(row);
+          }
+          YTG.channelVideos(channelId, 30, function (items) {
+            ok(items, "This channel has no videos.", head);
+          }, fail);
+        }, function () {
+          YTG.channelVideos(channelId, 30, function (items) {
+            ok(items, "This channel has no videos.", head);
+          }, fail);
+        });
       }, fail);
     });
   }
@@ -1271,6 +1343,7 @@
     // on setTimeout (user gesture is lost) — that looked like a forever spinner.
     ensureApi();
     loadIntoPlayer(item.id, startAt);
+    schedulePlayerFrameLock();
     if (!full) {
       clearTimeout(feedHoldTimer);
       feedHoldTimer = setTimeout(function () {
@@ -1280,6 +1353,7 @@
         removeClass(document.body, "mini");
         removeClass(document.body, "feed-hold");
         window.scrollTo(0, 0);
+        schedulePlayerFrameLock();
       }, 120);
     }
 
@@ -1497,6 +1571,7 @@
     // appears on its own turn, which is the lag when leaving a video.
     addClass(document.body, "feed-hold");
     addClass(document.body, "mini");
+    clearPlayerFrameLock();
     paintMiniIcon();
     clearTimeout(feedHoldTimer);
     feedHoldTimer = setTimeout(function () {
@@ -1513,6 +1588,7 @@
       removeClass(document.body, "mini");
       removeClass(document.body, "feed-hold");
       window.scrollTo(0, 0);
+      schedulePlayerFrameLock();
     }, 120);
   }
 
@@ -1548,6 +1624,7 @@
     removeClass(document.body, "mini");
     removeClass(document.body, "feed-hold");
     clearPlayerBusy();
+    clearPlayerFrameLock();
     show("watch", false);
     if (reloadWhenIdle) {
       location.reload();
@@ -1991,6 +2068,16 @@
     }
     YTG.onSignedOut(function () {
       afterAccountChange();
+    });
+    window.addEventListener("orientationchange", function () {
+      if (hasClass(document.body, "watching") && !hasClass(document.body, "mini") && !hasClass(document.body, "shorts-playing")) {
+        schedulePlayerFrameLock();
+      }
+    });
+    window.addEventListener("resize", function () {
+      if (hasClass(document.body, "watching") && !hasClass(document.body, "mini") && !hasClass(document.body, "shorts-playing")) {
+        schedulePlayerFrameLock();
+      }
     });
 
     on("search-form", "submit", function (event) {

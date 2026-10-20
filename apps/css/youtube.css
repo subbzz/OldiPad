@@ -1387,22 +1387,38 @@ body.watching:not(.mini):not(.shorts-playing) .yt-top {
 
 body.watching:not(.mini):not(.shorts-playing) .yt-watch-stage {
   height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
+}
+
+body.watching:not(.mini):not(.shorts-playing) .yt-watch-main {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
 body.watching:not(.mini):not(.shorts-playing) .yt-player {
-  position: -webkit-sticky;
-  position: sticky;
-  top: 0;
+  position: relative;
+  top: auto;
   z-index: 4;
   width: 100%;
-  height: 56.25vw;
+  height: 0;
   padding-top: 0;
   background: #000;
   -webkit-flex-shrink: 0;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+body.watching:not(.mini):not(.shorts-playing) .yt-watch-body {
+  -webkit-flex: 1;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ---- mini player: a bar above the tabs, like the app -------------- */
@@ -1802,16 +1818,31 @@ body.shorts-playing .yt-mini-bar {
     border-left: 1px solid #e5e5e5;
   }
 
-  body.watching:not(.mini):not(.shorts-playing) .yt-player {
-    position: -webkit-sticky;
-    position: sticky;
-    top: 0;
-    width: 100%;
-    height: 56.25vw;
-    padding-top: 0;
+  body.watching:not(.mini):not(.shorts-playing) .yt-watch-main {
+    display: -webkit-flex;
+    display: flex;
+    -webkit-flex-direction: column;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
   }
 
   body.watching:not(.mini) .yt-top {
     display: none;
   }
+}
+
+.yt-channel-pl-row {
+  padding: 0 12px 12px;
+}
+
+.yt-channel-pl-row button {
+  display: inline-block;
+  margin: 0 8px 8px 0;
+  padding: 8px 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 18px;
+  background: #f2f2f2;
+  color: #0f0f0f;
+  font-size: 14px;
 }

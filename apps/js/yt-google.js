@@ -601,6 +601,23 @@ var YTG = (function () {
     }, onErr);
   }
 
+  function mapPlaylists(items) {
+    var out = [];
+    var i;
+    for (i = 0; i < items.length; i++) {
+      if (!items[i] || !items[i].id) {
+        continue;
+      }
+      out.push({
+        id: items[i].id,
+        title: (items[i].snippet || {}).title || "Playlist",
+        count: +(((items[i].contentDetails || {}).itemCount) || 0),
+        thumb: thumb(items[i].snippet),
+      });
+    }
+    return out;
+  }
+
   function playlists(onOk, onErr, fresh) {
     if (fresh) {
       YTU.cacheClear("me:playlists");
@@ -610,19 +627,33 @@ var YTG = (function () {
       onOk(hit);
       return;
     }
-    api("GET", "playlists", { part: "snippet,contentDetails", mine: "true", maxResults: 50 }, null, function (data) {
-      var out = [];
-      var items = data.items || [];
-      for (var i = 0; i < items.length; i++) {
-        out.push({
-          id: items[i].id,
-          title: items[i].snippet.title,
-          count: +((items[i].contentDetails || {}).itemCount || 0),
-          thumb: thumb(items[i].snippet),
-        });
+    var acc = [];
+    function page(token) {
+      var params = { part: "snippet,contentDetails", mine: "true", maxResults: 50 };
+      if (token) {
+        params.pageToken = token;
       }
-      YTU.cachePut("me:playlists", out, 300);
-      onOk(out);
+      api("GET", "playlists", params, null, function (data) {
+        acc = acc.concat(mapPlaylists(data.items || []));
+        if (data.nextPageToken) {
+          page(data.nextPageToken);
+          return;
+        }
+        YTU.cachePut("me:playlists", acc, 300);
+        onOk(acc);
+      }, onErr);
+    }
+    page(null);
+  }
+
+  function channelPlaylists(channelId, onOk, onErr) {
+    if (!channelId) {
+      onOk([]);
+      return;
+    }
+    var key = "chpl:" + channelId;
+    cached(key, 1800, "playlists", { part: "snippet,contentDetails", channelId: channelId, maxResults: 50 }, function (data) {
+      onOk(mapPlaylists(data.items || []));
     }, onErr);
   }
 
@@ -746,6 +777,7 @@ var YTG = (function () {
     feed: feed,
     liked: liked,
     playlists: playlists,
+    channelPlaylists: channelPlaylists,
     watchLaterVideos: watchLaterVideos,
     addToWatchLater: addToWatchLater,
     removeFromWatchLater: removeFromWatchLater,

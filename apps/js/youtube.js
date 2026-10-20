@@ -88,6 +88,10 @@
     }
   }
 
+  // Only while a new video is starting. BUFFERING during resize (mini ↔ full) or
+  // during ads must not bring the black overlay back on top of the embed.
+  var playerAwaitingPlay = false;
+
   function setPlayerBusy(on) {
     show("player-busy", on);
   }
@@ -912,7 +916,10 @@
   }
 
   function loadIntoPlayer(id, start) {
-    setPlayerBusy(true);
+    playerAwaitingPlay = true;
+    if (!player || !playerReady) {
+      setPlayerBusy(true);
+    }
     if (player && playerReady) {
       player.loadVideoById({ videoId: id, startSeconds: start || 0 });
       return;
@@ -944,9 +951,8 @@
 
   function onPlayerState(event) {
     if (event.data === STATE.PLAYING) {
+      playerAwaitingPlay = false;
       setPlayerBusy(false);
-    } else if (event.data === STATE.BUFFERING) {
-      setPlayerBusy(true);
     }
     if (shortsMode) {
       // Shorts loop, like the app.
@@ -985,6 +991,7 @@
       setStatus(msg + " Playing the next one…", true);
       setTimeout(playNext, 2000);
     } else {
+      playerAwaitingPlay = false;
       setPlayerBusy(false);
       setStatus(msg, true);
     }
@@ -1426,6 +1433,8 @@
     if (!hasClass(document.body, "watching")) {
       return;
     }
+    playerAwaitingPlay = false;
+    setPlayerBusy(false);
     // feed-hold keeps the list hidden while the iframe shrinks. The list
     // appears on its own turn, which is the lag when leaving a video.
     addClass(document.body, "feed-hold");
@@ -1439,6 +1448,8 @@
 
   function expandFromMini() {
     closeSearch();
+    playerAwaitingPlay = false;
+    setPlayerBusy(false);
     addClass(document.body, "feed-hold");
     clearTimeout(feedHoldTimer);
     feedHoldTimer = setTimeout(function () {
@@ -1479,6 +1490,7 @@
     removeClass(document.body, "watching");
     removeClass(document.body, "mini");
     removeClass(document.body, "feed-hold");
+    playerAwaitingPlay = false;
     setPlayerBusy(false);
     show("watch", false);
     if (reloadWhenIdle) {

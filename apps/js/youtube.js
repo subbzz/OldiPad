@@ -1755,5 +1755,6 @@
     paintChips();
     paintAccount();
     setTab("home", true);
+    setTimeout(YTU.cachePrune, 5000);
   });
 })();

@@ -320,6 +320,36 @@ var YTU = (function () {
     } catch (err) {}
   }
 
+  // Once a day, drop expired cache entries (and the old full-reply "videos:" ones).
+  function cachePrune() {
+    if (load("ytPruned", 0) > Date.now() - 86400000) {
+      return;
+    }
+    var now = Date.now();
+    var drop = [];
+    var i;
+    try {
+      for (i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf(CACHE_PREFIX) !== 0) {
+          continue;
+        }
+        if (k.indexOf(CACHE_PREFIX + "videos:") === 0) {
+          drop.push(k);
+          continue;
+        }
+        var hit = load(k, null);
+        if (!hit || hit.until < now) {
+          drop.push(k);
+        }
+      }
+      for (i = 0; i < drop.length; i++) {
+        localStorage.removeItem(drop[i]);
+      }
+    } catch (err) {}
+    store("ytPruned", now);
+  }
+
   return {
     byId: byId,
     hasClass: hasClass,
@@ -346,5 +376,6 @@ var YTU = (function () {
     cacheGet: cacheGet,
     cachePut: cachePut,
     cacheClear: cacheClear,
+    cachePrune: cachePrune,
   };
 })();

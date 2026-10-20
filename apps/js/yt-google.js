@@ -264,7 +264,8 @@ var YTG = (function () {
     return (+m[1] || 0) * 86400 + (+m[2] || 0) * 3600 + (+m[3] || 0) * 60 + (+m[4] || 0);
   }
 
-  function fromVideo(v) {
+  // inList: lists don't show descriptions, so drop them there to keep the cache small.
+  function fromVideo(v, inList) {
     var s = v.snippet || {};
     var st = v.statistics || {};
     return {
@@ -273,7 +274,7 @@ var YTG = (function () {
       author: s.channelTitle || "",
       channelId: s.channelId || "",
       published: s.publishedAt || "",
-      description: s.description || "",
+      description: inList ? "" : s.description || "",
       views: +st.viewCount || 0,
       likes: +st.likeCount || 0,
       duration: duration((v.contentDetails || {}).duration),
@@ -282,25 +283,34 @@ var YTG = (function () {
   }
 
   // Adds duration, views and channel to a list of {id} items (1 unit per 50 videos).
+  // Only the fields the app shows are cached, not YouTube's whole reply: big
+  // localStorage writes stall an old iPad.
   function details(ids, onOk, onErr) {
-    var key = "videos:" + ids.join(",");
-    var out = [];
-    var i;
     if (!ids.length) {
       onOk([]);
       return;
     }
-    cached(key, 3600, "videos", { part: "snippet,statistics,contentDetails", id: ids.slice(0, 50).join(","), maxResults: 50 }, function (data) {
+    ids = ids.slice(0, 50);
+    var key = "v:" + ids.join(",");
+    var hit = YTU.cacheGet(key);
+    if (hit) {
+      onOk(hit);
+      return;
+    }
+    api("GET", "videos", { part: "snippet,statistics,contentDetails", id: ids.join(","), maxResults: 50 }, null, function (data) {
       var byId = {};
       var items = data.items || [];
+      var out = [];
+      var i;
       for (i = 0; i < items.length; i++) {
-        byId[items[i].id] = fromVideo(items[i]);
+        byId[items[i].id] = fromVideo(items[i], ids.length > 1);
       }
       for (i = 0; i < ids.length; i++) {
         if (byId[ids[i]]) {
           out.push(byId[ids[i]]);
         }
       }
+      YTU.cachePut(key, out, 3600);
       onOk(out);
     }, onErr);
   }
@@ -499,12 +509,18 @@ var YTG = (function () {
   }
 
   function liked(onOk, onErr) {
-    cached("me:liked", 300, "videos", { part: "snippet,statistics,contentDetails", myRating: "like", maxResults: 50 }, function (data) {
+    var hit = YTU.cacheGet("me:liked");
+    if (hit) {
+      onOk(hit);
+      return;
+    }
+    api("GET", "videos", { part: "snippet,statistics,contentDetails", myRating: "like", maxResults: 50 }, null, function (data) {
       var out = [];
       var items = data.items || [];
       for (var i = 0; i < items.length; i++) {
-        out.push(fromVideo(items[i]));
+        out.push(fromVideo(items[i], true));
       }
+      YTU.cachePut("me:liked", out, 300);
       onOk(out);
     }, onErr);
   }

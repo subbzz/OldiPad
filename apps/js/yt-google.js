@@ -35,6 +35,8 @@ var YTG = (function () {
     auth = null;
     YTU.store("ytAuth", null);
     YTU.cacheClear("me:");
+    YTU.cacheClear("me:library");
+    YTU.cacheClear("me:playlists");
     if (onSignedOut) {
       onSignedOut();
     }
@@ -546,8 +548,69 @@ var YTG = (function () {
     }, onErr);
   }
 
-  function playlists(onOk, onErr) {
-    cached("me:playlists", 300, "playlists", { part: "snippet,contentDetails", mine: "true", maxResults: 50 }, function (data) {
+  function myLibrary(onOk, onErr) {
+    cached("me:library", 600, "channels", { part: "contentDetails", mine: "true" }, function (data) {
+      var rel = (((data.items || [])[0] || {}).contentDetails || {}).relatedPlaylists || {};
+      onOk({
+        watchLater: rel.watchLater || "",
+        likes: rel.likes || "",
+      });
+    }, onErr);
+  }
+
+  function watchLaterVideos(onOk, onErr) {
+    myLibrary(function (lib) {
+      if (!lib.watchLater) {
+        onOk([]);
+        return;
+      }
+      playlistVideos(lib.watchLater, 50, 120, onOk, onErr);
+    }, onErr);
+  }
+
+  function addToWatchLater(videoId, onOk, onErr) {
+    myLibrary(function (lib) {
+      if (!lib.watchLater) {
+        onErr("Watch later isn't available on this account.");
+        return;
+      }
+      save(videoId, lib.watchLater, onOk, onErr);
+    }, onErr);
+  }
+
+  function removeFromWatchLater(videoId, onOk, onErr) {
+    myLibrary(function (lib) {
+      if (!lib.watchLater) {
+        onOk();
+        return;
+      }
+      api("GET", "playlistItems", { part: "id,contentDetails", playlistId: lib.watchLater, maxResults: 50 }, null, function (data) {
+        var items = data.items || [];
+        var i;
+        for (i = 0; i < items.length; i++) {
+          if (items[i].contentDetails && items[i].contentDetails.videoId === videoId) {
+            api("DELETE", "playlistItems", { id: items[i].id }, null, function () {
+              YTU.cacheClear("me:pl:" + lib.watchLater);
+              onOk();
+            }, onErr);
+            return;
+          }
+        }
+        onOk();
+      }, onErr);
+    }, onErr);
+  }
+
+  function playlists(onOk, onErr, fresh) {
+    if (fresh) {
+      YTU.cacheClear("me:playlists");
+    }
+    var hit = !fresh && YTU.cacheGet("me:playlists");
+    if (hit) {
+      onOk(hit);
+      return;
+    }
+    api("GET", "playlists", { part: "snippet,contentDetails", mine: "true", maxResults: 50 }, null, function (data) {
       var out = [];
       var items = data.items || [];
       for (var i = 0; i < items.length; i++) {
@@ -558,6 +621,7 @@ var YTG = (function () {
           thumb: thumb(items[i].snippet),
         });
       }
+      YTU.cachePut("me:playlists", out, 300);
       onOk(out);
     }, onErr);
   }
@@ -682,6 +746,9 @@ var YTG = (function () {
     feed: feed,
     liked: liked,
     playlists: playlists,
+    watchLaterVideos: watchLaterVideos,
+    addToWatchLater: addToWatchLater,
+    removeFromWatchLater: removeFromWatchLater,
     rating: rating,
     subscriptionId: subscriptionId,
     rate: rate,

@@ -19,8 +19,8 @@ own copy (offline cache) and only needs the internet for YouTube itself.
   left off, a mini player, channel pages, description, and comments
 - Sign in with Google: like/dislike, subscribe, subscriptions feed, liked
   videos, your playlists, save to playlist, post comments
-- Watch history and Watch later stay on the iPad (YouTube's API doesn't share
-  your real ones)
+- Watch history stays on the iPad only; when signed in, Watch later and your
+  playlists come from your Google account and stay in sync with other devices
 
 Because playback uses YouTube's embedded player: YouTube picks the quality, ads
 may play, and videos whose owners block embedding won't play (the app says so

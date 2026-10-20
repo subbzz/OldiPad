@@ -246,13 +246,82 @@
     if (!id) {
       return;
     }
-    if (!t || (d && t > d - 15)) {
+    t = Math.floor(t || 0);
+    d = Math.floor(d || 0);
+    if (t < 3 || (d > 0 && t >= d - 12)) {
       delete positions[id];
     } else {
-      positions[id] = { t: Math.floor(t), d: Math.floor(d || 0), at: Date.now() };
+      var prev = positions[id];
+      positions[id] = {
+        t: t,
+        d: d || (prev && prev.d) || 0,
+        at: Date.now(),
+      };
     }
     clearTimeout(posTimer);
     posTimer = setTimeout(flushPositions, 1500);
+    refreshVisibleFeedProgress();
+  }
+
+  // Red bar on thumbnails (Subscriptions, Home, etc.), like the YouTube app.
+  function progressPercent(item) {
+    if (!item || !item.id) {
+      return 0;
+    }
+    var pos = positions[item.id];
+    if (!pos || pos.t < 3) {
+      return 0;
+    }
+    var total = pos.d || item.duration;
+    if (!total || total < 1) {
+      return 0;
+    }
+    if (pos.t >= total - 12) {
+      return 0;
+    }
+    var pct = Math.round((pos.t / total) * 100);
+    return pct < 1 ? 1 : pct > 100 ? 100 : pct;
+  }
+
+  function applyProgressBar(thumb, item) {
+    if (!thumb) {
+      return;
+    }
+    var pct = progressPercent(item);
+    var bar = thumb.querySelector(".yt-progress");
+    if (!pct) {
+      if (bar && bar.parentNode) {
+        bar.parentNode.removeChild(bar);
+      }
+      return;
+    }
+    if (!bar) {
+      bar = el("div", "yt-progress");
+      thumb.appendChild(bar);
+    }
+    bar.innerHTML = "";
+    var fill = el("div");
+    fill.style.width = pct + "%";
+    bar.appendChild(fill);
+  }
+
+  function refreshVisibleFeedProgress() {
+    var feeds = [byId("subs-feed"), byId("home-feed"), byId("list-feed"), byId("you-history")];
+    var f;
+    for (f = 0; f < feeds.length; f++) {
+      var feed = feeds[f];
+      if (!feed) {
+        continue;
+      }
+      var thumbs = feed.querySelectorAll(".yt-thumb[data-vid], .yt-compact-thumb[data-vid], .yt-shelf-card .yt-thumb[data-vid]");
+      var i;
+      for (i = 0; i < thumbs.length; i++) {
+        var thumb = thumbs[i];
+        var id = thumb.getAttribute("data-vid");
+        var dur = +thumb.getAttribute("data-dur") || 0;
+        applyProgressBar(thumb, { id: id, duration: dur });
+      }
+    }
   }
 
   function flushPositions() {
@@ -300,6 +369,12 @@
   function cardNode(item, index, kind, list, context) {
     var card = el("div", kind === "compact" ? "yt-compact" : kind === "shelf" ? "yt-shelf-card" : "yt-card");
     var thumb = el("div", kind === "compact" ? "yt-compact-thumb" : "yt-thumb");
+    if (item.id) {
+      thumb.setAttribute("data-vid", item.id);
+    }
+    if (item.duration) {
+      thumb.setAttribute("data-dur", String(item.duration));
+    }
     var img = el("img");
     img.alt = "";
     img.src = YTU.thumbUrl(item.id);
@@ -309,15 +384,7 @@
     } else if (YTU.formatDuration(item.duration)) {
       thumb.appendChild(el("div", "yt-dur", YTU.formatDuration(item.duration)));
     }
-    var pos = positions[item.id];
-    var total = (pos && pos.d) || item.duration;
-    if (pos && total) {
-      var bar = el("div", "yt-progress");
-      var fill = el("div");
-      fill.style.width = Math.min(100, Math.round((pos.t / total) * 100)) + "%";
-      bar.appendChild(fill);
-      thumb.appendChild(bar);
-    }
+    applyProgressBar(thumb, item);
     card.appendChild(thumb);
 
     var row = el("div", kind === "grid" ? "yt-card-row" : "yt-card-row yt-card-row-plain");
@@ -1085,6 +1152,13 @@
       clearPlayerBusy();
     } else if (event.data === STATE.PAUSED && player && player.getDuration && player.getDuration() > 0) {
       clearPlayerBusy();
+      if (currentItem) {
+        var pausedNow = playerNow();
+        if (pausedNow) {
+          savePosition(currentItem.id, pausedNow.t, pausedNow.d);
+          flushPositions();
+        }
+      }
     }
     if (shortsMode) {
       // Shorts loop, like the app.
@@ -1148,7 +1222,7 @@
         savePosition(currentItem.id, now.t, now.d);
       }
     }
-  }, 15000);
+  }, 5000);
 
   // ---- watch page ------------------------------------------------------
 
@@ -1572,6 +1646,14 @@
     addClass(document.body, "feed-hold");
     addClass(document.body, "mini");
     clearPlayerFrameLock();
+    if (currentItem) {
+      var miniNow = playerNow();
+      if (miniNow && miniNow.t > 0) {
+        savePosition(currentItem.id, miniNow.t, miniNow.d);
+        flushPositions();
+      }
+    }
+    refreshVisibleFeedProgress();
     paintMiniIcon();
     clearTimeout(feedHoldTimer);
     feedHoldTimer = setTimeout(function () {
@@ -1594,9 +1676,9 @@
 
   function closePlayer(opts) {
     opts = opts || {};
-    if (currentItem && playing()) {
+    if (currentItem) {
       var now = playerNow();
-      if (now) {
+      if (now && now.t > 0) {
         savePosition(currentItem.id, now.t, now.d);
       }
     }
@@ -1626,6 +1708,7 @@
     clearPlayerBusy();
     clearPlayerFrameLock();
     show("watch", false);
+    refreshVisibleFeedProgress();
     if (reloadWhenIdle) {
       location.reload();
     }

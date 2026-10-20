@@ -321,33 +321,47 @@ var YTU = (function () {
   }
 
   // Once a day, drop expired cache entries (and the old full-reply "videos:" ones).
+  // A few keys per turn: parsing the whole cache at once stalls an iPad mini 2.
   function cachePrune() {
     if (load("ytPruned", 0) > Date.now() - 86400000) {
       return;
     }
-    var now = Date.now();
-    var drop = [];
+    var keys = [];
     var i;
     try {
       for (i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
-        if (!k || k.indexOf(CACHE_PREFIX) !== 0) {
-          continue;
-        }
-        if (k.indexOf(CACHE_PREFIX + "videos:") === 0) {
-          drop.push(k);
-          continue;
-        }
-        var hit = load(k, null);
-        if (!hit || hit.until < now) {
-          drop.push(k);
+        if (k && k.indexOf(CACHE_PREFIX) === 0) {
+          keys.push(k);
         }
       }
-      for (i = 0; i < drop.length; i++) {
-        localStorage.removeItem(drop[i]);
+    } catch (err) {
+      return;
+    }
+    var now = Date.now();
+    var index = 0;
+    function step() {
+      var end = Math.min(index + 4, keys.length);
+      for (; index < end; index++) {
+        var key = keys[index];
+        try {
+          if (key.indexOf(CACHE_PREFIX + "videos:") === 0) {
+            localStorage.removeItem(key);
+            continue;
+          }
+          var hit = load(key, null);
+          if (!hit || hit.until < now) {
+            localStorage.removeItem(key);
+          }
+        } catch (err) {}
       }
-    } catch (err) {}
-    store("ytPruned", now);
+      if (index < keys.length) {
+        setTimeout(step, 40);
+      } else {
+        store("ytPruned", now);
+      }
+    }
+    step();
   }
 
   return {

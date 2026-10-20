@@ -251,9 +251,10 @@ var YTG = (function () {
     }, onErr);
   }
 
-  function thumb(snippet) {
-    var t = snippet.thumbnails || {};
-    return (t.medium || t["default"] || t.high || {}).url || "";
+  function thumb(snippet, small) {
+    var t = (snippet || {}).thumbnails || {};
+    var pick = small ? t["default"] || t.medium || t.high : t.medium || t["default"] || t.high;
+    return (pick || {}).url || "";
   }
 
   function duration(iso) {
@@ -415,33 +416,30 @@ var YTG = (function () {
 
   function subscriptions(onOk, onErr) {
     var hit = YTU.cacheGet("me:subs");
-    if (hit) {
-      onOk(hit);
+    if (hit && hit.slice) {
+      onOk(hit.slice(0, 50));
       return;
     }
-    var out = [];
-    function page(token, n) {
-      api("GET", "subscriptions", { part: "snippet", mine: "true", maxResults: 50, order: "relevance", pageToken: token }, null, function (data) {
-        var items = data.items || [];
-        for (var i = 0; i < items.length; i++) {
-          out.push({
-            channelId: items[i].snippet.resourceId.channelId,
-            title: items[i].snippet.title,
-            avatar: thumb(items[i].snippet),
-          });
-        }
-        if (data.nextPageToken && n < 4) {
-          page(data.nextPageToken, n + 1);
-        } else {
-          YTU.cachePut("me:subs", out, 1800);
-          onOk(out);
-        }
-      }, onErr);
-    }
-    page("", 1);
+    // One page, and the small thumbnail: the strip used to decode every
+    // subscription's medium image, which stalled the iPad.
+    api("GET", "subscriptions", { part: "snippet", mine: "true", maxResults: 50, order: "relevance" }, null, function (data) {
+      var out = [];
+      var items = data.items || [];
+      var i;
+      for (i = 0; i < items.length; i++) {
+        out.push({
+          channelId: items[i].snippet.resourceId.channelId,
+          title: items[i].snippet.title,
+          avatar: thumb(items[i].snippet, true),
+        });
+      }
+      YTU.cachePut("me:subs", out, 1800);
+      onOk(out);
+    }, onErr);
   }
 
   // Latest uploads from your subscriptions: 1 unit per channel, cached 20 minutes.
+  // A few channels at a time so the replies don't all land on the same turn.
   function feed(onOk, onErr) {
     var hit = YTU.cacheGet("me:feed");
     if (hit) {
@@ -449,28 +447,27 @@ var YTG = (function () {
       return;
     }
     subscriptions(function (subs) {
-      var channels = subs.slice(0, 30);
+      var channels = subs.slice(0, 12);
+      var strip = subs.slice(0, 24);
       var pending = channels.length;
       var ids = [];
+      var seen = {};
       var avatars = {};
       if (!pending) {
-        onOk({ channels: subs, videos: [] });
+        onOk({ channels: strip, videos: [] });
         return;
       }
-      function oneDone() {
-        pending -= 1;
-        if (pending) {
-          return;
-        }
-        // Newest first; details() keeps the order of ids, so sort after.
+      var next = 0;
+      function finish() {
         var chunks = [];
-        for (var i = 0; i < ids.length; i += 50) {
+        var i;
+        for (i = 0; i < ids.length; i += 50) {
           chunks.push(ids.slice(i, i + 50));
         }
         var videos = [];
         var left = chunks.length;
         if (!left) {
-          onOk({ channels: subs, videos: [] });
+          onOk({ channels: strip, videos: [] });
           return;
         }
         function got(list) {
@@ -482,28 +479,52 @@ var YTG = (function () {
           videos.sort(function (a, b) {
             return a.published < b.published ? 1 : -1;
           });
-          for (var v = 0; v < videos.length; v++) {
+          var v;
+          for (v = 0; v < videos.length; v++) {
             videos[v].avatar = avatars[videos[v].channelId] || "";
           }
-          var result = { channels: subs, videos: videos.slice(0, 40) };
+          var result = { channels: strip, videos: videos.slice(0, 24) };
           YTU.cachePut("me:feed", result, 1200);
           onOk(result);
         }
-        for (var c = 0; c < chunks.length; c++) {
-          details(chunks[c], got, function () {
+        for (i = 0; i < chunks.length; i++) {
+          details(chunks[i], got, function () {
             got([]);
           });
         }
       }
-      for (var i = 0; i < channels.length; i++) {
-        avatars[channels[i].channelId] = channels[i].avatar;
-        api("GET", "playlistItems", { part: "contentDetails", playlistId: "UU" + channels[i].channelId.slice(2), maxResults: 4 }, null, function (data) {
+      function finished() {
+        pending -= 1;
+        if (pending) {
+          startOne();
+          return;
+        }
+        finish();
+      }
+      function startOne() {
+        if (next >= channels.length) {
+          return;
+        }
+        var ch = channels[next];
+        next += 1;
+        avatars[ch.channelId] = ch.avatar;
+        api("GET", "playlistItems", { part: "contentDetails", playlistId: "UU" + ch.channelId.slice(2), maxResults: 3 }, null, function (data) {
           var items = data.items || [];
-          for (var j = 0; j < items.length; j++) {
-            ids.push(items[j].contentDetails.videoId);
+          var j;
+          for (j = 0; j < items.length; j++) {
+            var id = items[j].contentDetails && items[j].contentDetails.videoId;
+            if (id && !seen[id]) {
+              seen[id] = true;
+              ids.push(id);
+            }
           }
-          oneDone();
-        }, oneDone);
+          finished();
+        }, finished);
+      }
+      var batch = pending < 4 ? pending : 4;
+      var b;
+      for (b = 0; b < batch; b++) {
+        startOne();
       }
     }, onErr);
   }

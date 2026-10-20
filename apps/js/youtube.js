@@ -134,6 +134,9 @@
   }
 
   var positions = YTU.load("ytPos", {}) || {};
+  var posTimer = null;
+  // Memory updates immediately; the disk write waits. localStorage on iOS 12
+  // is synchronous, and writing it in the same turn as a video change is a hitch.
   function savePosition(id, t, d) {
     if (!id) {
       return;
@@ -143,6 +146,13 @@
     } else {
       positions[id] = { t: Math.floor(t), d: Math.floor(d || 0), at: Date.now() };
     }
+    clearTimeout(posTimer);
+    posTimer = setTimeout(flushPositions, 1500);
+  }
+
+  function flushPositions() {
+    clearTimeout(posTimer);
+    posTimer = null;
     var ids = [];
     var key;
     for (key in positions) {
@@ -154,9 +164,30 @@
       ids.sort(function (a, b) {
         return positions[a].at - positions[b].at;
       });
-      delete positions[ids[0]];
+      while (ids.length > 200) {
+        delete positions[ids.shift()];
+      }
     }
     YTU.store("ytPos", positions);
+  }
+
+  var historyTimer = null;
+  var historyItem = null;
+  function rememberWatch(item) {
+    historyItem = item;
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(flushHistory, 1200);
+  }
+
+  function flushHistory() {
+    clearTimeout(historyTimer);
+    historyTimer = null;
+    if (!historyItem) {
+      return;
+    }
+    var item = historyItem;
+    historyItem = null;
+    pushUnique("ytHistory", item, MAX_HISTORY);
   }
 
   // ---- cards ---------------------------------------------------------------
@@ -196,16 +227,10 @@
       el("div", "yt-card-sub", YTU.joinBits([item.author, YTU.formatViews(item.views), YTU.timeAgo(item.published)]))
     );
     row.appendChild(text);
-    var more = el("button", "yt-more");
-    more.type = "button";
-    more.setAttribute("aria-label", "More");
-    more.innerHTML =
-      '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>';
-    more.addEventListener("click", function (event) {
-      event.stopPropagation();
-      openItemMenu(item, context);
-    });
-    row.appendChild(more);
+    // Up next hides this button; building an SVG per card was wasted work on every video switch.
+    if (kind !== "compact") {
+      row.appendChild(moreButton(item, context));
+    }
     card.appendChild(row);
 
     card.setAttribute("role", "button");
@@ -215,20 +240,74 @@
     return card;
   }
 
-  function renderCards(target, items, kind, emptyText, context) {
+  var moreIcon = null;
+  function moreButton(item, context) {
+    if (!moreIcon) {
+      var holder = document.createElement("div");
+      holder.innerHTML =
+        '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>';
+      moreIcon = holder.firstChild;
+    }
+    var more = el("button", "yt-more");
+    more.type = "button";
+    more.setAttribute("aria-label", "More");
+    more.appendChild(moreIcon.cloneNode(true));
+    more.addEventListener("click", function (event) {
+      event.stopPropagation();
+      openItemMenu(item, context);
+    });
+    return more;
+  }
+
+  var paintGen = {};
+  function cancelCards(target) {
+    if (!target || !target.id) {
+      return;
+    }
+    paintGen[target.id] = (paintGen[target.id] || 0) + 1;
     target.innerHTML = "";
-    if (!items || !items.length) {
+  }
+  // Six cards per turn. Building a whole feed in one turn, then decoding every
+  // thumbnail, was the scroll hitch on the iPad.
+  function renderCards(target, items, kind, emptyText, context, gap, done) {
+    var slot = target.id || "cards";
+    var gen = (paintGen[slot] || 0) + 1;
+    paintGen[slot] = gen;
+    target.innerHTML = "";
+    var list = [];
+    var n;
+    for (n = 0; n < (items ? items.length : 0); n++) {
+      if (items[n] && items[n].id) {
+        list.push(items[n]);
+      }
+    }
+    if (!list.length) {
       if (emptyText) {
         target.appendChild(el("p", "yt-empty-line", emptyText));
       }
+      if (done) {
+        done();
+      }
       return;
     }
-    var i;
-    for (i = 0; i < items.length; i++) {
-      if (items[i] && items[i].id) {
-        target.appendChild(cardNode(items[i], i, kind, items, context));
+    var i = 0;
+    function step() {
+      if (paintGen[slot] !== gen) {
+        return;
+      }
+      var frag = document.createDocumentFragment();
+      var end = Math.min(i + 6, list.length);
+      for (; i < end; i++) {
+        frag.appendChild(cardNode(list[i], i, kind, items, context));
+      }
+      target.appendChild(frag);
+      if (i < list.length) {
+        setTimeout(step, gap || 50);
+      } else if (done) {
+        done();
       }
     }
+    step();
   }
 
   // ---- views and navigation -------------------------------------------
@@ -274,23 +353,26 @@
     listStack = [];
     listLoader = null;
     closeSearch();
-    leaveWatch();
     markTab(name);
     setStatus("", false);
-    if (name !== "shorts") {
-      pauseShorts();
+    if (name === "shorts") {
+      // Show Shorts before closing the watch page, so the feed never lays out
+      // in the same turn as the player. Shrinking to the mini player first
+      // resized the iframe and then threw that layout away.
+      showView("view-shorts");
+      if (currentItem) {
+        closePlayer({ keepFrame: true });
+      }
+      loadShorts();
+      return;
     }
+    leaveWatch();
+    pauseShorts();
     if (name === "home") {
       showView("view-home");
       if (refresh || !byId("home-feed").childNodes.length) {
         loadHome();
       }
-    } else if (name === "shorts") {
-      if (currentItem) {
-        closePlayer();
-      }
-      showView("view-shorts");
-      loadShorts();
     } else if (name === "subs") {
       showView("view-subs");
       loadSubs();
@@ -315,7 +397,7 @@
     showView("view-list");
     byId("list-title").textContent = title;
     byId("list-header").innerHTML = "";
-    byId("list-feed").innerHTML = "";
+    cancelCards(byId("list-feed"));
     setStatus("Loading…", false);
     var isLatest = YTU.latest("list");
     loader(function (items, emptyText, header) {
@@ -411,7 +493,7 @@
       return;
     }
     var isLatest = YTU.latest("home");
-    feed.innerHTML = "";
+    cancelCards(feed);
     setStatus("Loading…", false);
     var live = currentChip === "Live";
     var query = currentChip === "All" ? chipQuery("songs") : live ? YTU.trim(settings.topic) || "news" : chipQuery(currentChip);
@@ -450,7 +532,7 @@
     var feed = byId("subs-feed");
     if (!signed) {
       strip.innerHTML = "";
-      feed.innerHTML = "";
+      cancelCards(feed);
       return;
     }
     var isLatest = YTU.latest("subs");
@@ -465,7 +547,8 @@
       strip.innerHTML = "";
       var channels = data.channels || [];
       var i;
-      for (i = 0; i < channels.length; i++) {
+      var shown = channels.length > 24 ? 24 : channels.length;
+      for (i = 0; i < shown; i++) {
         (function (ch, index) {
           var b = el("button", "yt-strip-item");
           b.type = "button";
@@ -735,11 +818,33 @@
     }
   };
 
+  var apiLoading = false;
+  function ensureApi() {
+    if (apiReady || apiLoading) {
+      return;
+    }
+    if (window.YT && window.YT.loaded && window.YT.Player) {
+      apiReady = true;
+      return;
+    }
+    // After the home feed, not during it. Parsing this script at startup
+    // stalled the first paint on the iPad mini 2.
+    apiLoading = true;
+    var script = document.createElement("script");
+    script.src = "https://www.youtube.com/iframe_api";
+    script.onerror = function () {
+      apiLoading = false;
+    };
+    document.body.appendChild(script);
+  }
+
   function whenApi(fn) {
     if (apiReady || (window.YT && window.YT.loaded && window.YT.Player)) {
+      apiReady = true;
       fn();
     } else {
       apiWaiters.push(fn);
+      ensureApi();
     }
   }
 
@@ -841,11 +946,22 @@
   }
 
   // Remember where you are in each video, like the app does.
+  function playerNow() {
+    try {
+      return { t: player.getCurrentTime(), d: player.getDuration() };
+    } catch (err) {
+      return null;
+    }
+  }
+
   setInterval(function () {
     if (currentItem && !shortsMode && playing()) {
-      savePosition(currentItem.id, player.getCurrentTime(), player.getDuration());
+      var now = playerNow();
+      if (now) {
+        savePosition(currentItem.id, now.t, now.d);
+      }
     }
-  }, 5000);
+  }, 15000);
 
   // ---- watch page ------------------------------------------------------
 
@@ -871,18 +987,51 @@
 
   // Up next is drawn shortly after a video starts and kept short: building
   // these cards while YouTube's player loads was most of the switching lag on
-  // an iPad mini 2.
+  // an iPad mini 2. A later channel lookup appends cards; it does not rebuild them.
   var upNextTimer = null;
+  var upNextGen = 0;
+  var upNextPainting = false;
   function renderUpNext() {
     clearTimeout(upNextTimer);
-    upNextTimer = setTimeout(drawUpNext, 1200);
+    upNextPainting = false;
+    var gen = ++upNextGen;
+    // Stop a feed of cards still being built for the previous video.
+    paintGen.upnext = (paintGen.upnext || 0) + 1;
+    upNextTimer = setTimeout(function () {
+      if (gen !== upNextGen) {
+        return;
+      }
+      upNextTimer = null;
+      upNextPainting = true;
+      var box = byId("upnext");
+      renderCards(box, queue.slice(0, 12), "compact", "", "Up next", 120, function () {
+        if (gen !== upNextGen) {
+          upNextPainting = false;
+          return;
+        }
+        upNextPainting = false;
+        if (queue.length > box.childNodes.length) {
+          appendCards(box, queue.slice(box.childNodes.length, 12));
+        }
+        if (box.firstChild) {
+          addClass(box.firstChild, "is-next");
+        }
+      });
+    }, 1200);
   }
 
-  function drawUpNext() {
-    renderCards(byId("upnext"), queue.slice(0, 12), "compact", "", "Up next");
-    var first = byId("upnext").firstChild;
-    if (first) {
-      addClass(first, "is-next");
+  function appendCards(target, items) {
+    var frag = document.createDocumentFragment();
+    var i;
+    var n = 0;
+    for (i = 0; i < items.length; i++) {
+      if (items[i] && items[i].id) {
+        frag.appendChild(cardNode(items[i], n, "compact", queue, "Up next"));
+        n += 1;
+      }
+    }
+    if (n) {
+      target.appendChild(frag);
     }
   }
 
@@ -895,13 +1044,22 @@
     for (i = 0; i < queue.length; i++) {
       have[queue[i].id] = true;
     }
+    var added = [];
     for (i = 0; i < extra.length; i++) {
       if (extra[i] && extra[i].id && !have[extra[i].id]) {
         queue.push(extra[i]);
         have[extra[i].id] = true;
+        added.push(extra[i]);
       }
     }
-    renderUpNext();
+    if (!added.length || upNextTimer || upNextPainting) {
+      return;
+    }
+    var box = byId("upnext");
+    var room = 12 - box.childNodes.length;
+    if (room > 0) {
+      appendCards(box, added.slice(0, room));
+    }
   }
 
   function playFromList(item, list) {
@@ -956,20 +1114,25 @@
   }
 
   function playItem(item) {
-    if (currentItem && playing()) {
-      savePosition(currentItem.id, player.getCurrentTime(), player.getDuration());
+    var prev = currentItem;
+    var prevPos = null;
+    if (prev && !shortsMode && playing()) {
+      prevPos = playerNow();
     }
+    var full = hasClass(document.body, "watching") && !hasClass(document.body, "mini");
+    var fromMini = hasClass(document.body, "mini");
     currentItem = item;
     currentInfo = null;
     rating = "none";
     subscribed = false;
     commentsNext = "";
     commentsFor = null;
-    pauseShorts();
+    if (shortsMode) {
+      pauseShorts();
+    }
     closeSearch();
     show("watch", true);
     addClass(document.body, "watching");
-    removeClass(document.body, "mini");
     show("watch-desc", false);
     byId("watch-desc").textContent = "";
     paintWatchMeta(item, null);
@@ -977,37 +1140,70 @@
     paintSubscribed();
     byId("comments").innerHTML = "";
     show("comments-more", false);
+    show("comments-open", false);
+    show("comment-box", false);
     setStatus("", false);
-    window.scrollTo(0, 0);
-    pushUnique("ytHistory", item, MAX_HISTORY);
+    if (prevPos) {
+      savePosition(prev.id, prevPos.t, prevPos.d);
+    }
+    rememberWatch(item);
 
     var saved = positions[item.id];
-    loadIntoPlayer(item.id, saved && saved.t > 10 ? saved.t : 0);
+    var startAt = saved && saved.t > 10 ? saved.t : 0;
+    if (full) {
+      // The feed is already hidden. Ask the player to move before any more work.
+      loadIntoPlayer(item.id, startAt);
+    } else {
+      // Hide the list on this turn. Grow or start the player on the next one,
+      // so the two layouts don't land together.
+      if (!fromMini) {
+        window.scrollTo(0, 0);
+      }
+      addClass(document.body, "feed-hold");
+      clearTimeout(feedHoldTimer);
+      feedHoldTimer = setTimeout(function () {
+        if (currentItem !== item) {
+          return;
+        }
+        removeClass(document.body, "mini");
+        removeClass(document.body, "feed-hold");
+        loadIntoPlayer(item.id, startAt);
+        window.scrollTo(0, 0);
+      }, 60);
+    }
 
     var isLatest = YTU.latest("watch");
-    YTG.video(item.id, function (info) {
+    setTimeout(function () {
       if (!isLatest()) {
         return;
       }
-      currentInfo = info;
-      item.channelId = item.channelId || info.channelId;
-      item.title = info.title || item.title;
-      item.author = info.author || item.author;
-      item.duration = info.duration || item.duration;
-      pushUnique("ytHistory", item, MAX_HISTORY);
-      paintWatchMeta(item, info);
-      byId("watch-desc").textContent = info.description || "";
-      paintRating();
-      setTimeout(function () {
-        if (isLatest()) {
-          loadWatchExtras(item, info, isLatest);
+      YTG.video(item.id, function (info) {
+        if (!isLatest()) {
+          return;
         }
-      }, 1500);
-    }, function (err) {
-      if (isLatest()) {
-        setStatus(err, true);
-      }
-    });
+        currentInfo = info;
+        item.channelId = item.channelId || info.channelId;
+        item.title = info.title || item.title;
+        item.author = info.author || item.author;
+        item.duration = info.duration || item.duration;
+        rememberWatch(item);
+        paintWatchMeta(item, info);
+        paintRating();
+        show("comments-open", true);
+        commentsFor = isLatest;
+        setTimeout(function () {
+          if (!isLatest()) {
+            return;
+          }
+          byId("watch-desc").textContent = info.description || "";
+          loadWatchExtras(item, info, isLatest);
+        }, 1500);
+      }, function (err) {
+        if (isLatest()) {
+          setStatus(err, true);
+        }
+      });
+    }, 0);
   }
 
   function loadWatchExtras(item, info, isLatest) {
@@ -1031,11 +1227,9 @@
       }, function () {});
     }
     // Comments load when asked for, not with every video (saves time and quota).
-    byId("comments").innerHTML = "";
     show("comments-more", false);
     show("comments-open", true);
     commentsFor = isLatest;
-    show("comment-box", false);
     if (!signedIn()) {
       return;
     }
@@ -1170,31 +1364,64 @@
     });
   }
 
+  var feedHoldTimer = null;
   function shrinkToMini() {
     if (!hasClass(document.body, "watching")) {
       return;
     }
+    // feed-hold keeps the list hidden while the iframe shrinks. The list
+    // appears on its own turn, which is the lag when leaving a video.
+    addClass(document.body, "feed-hold");
     addClass(document.body, "mini");
     paintMiniIcon();
+    clearTimeout(feedHoldTimer);
+    feedHoldTimer = setTimeout(function () {
+      removeClass(document.body, "feed-hold");
+    }, 80);
   }
 
   function expandFromMini() {
-    removeClass(document.body, "mini");
     closeSearch();
-    window.scrollTo(0, 0);
+    addClass(document.body, "feed-hold");
+    clearTimeout(feedHoldTimer);
+    feedHoldTimer = setTimeout(function () {
+      removeClass(document.body, "mini");
+      removeClass(document.body, "feed-hold");
+      window.scrollTo(0, 0);
+    }, 60);
   }
 
-  function closePlayer() {
+  function closePlayer(opts) {
+    opts = opts || {};
     if (currentItem && playing()) {
-      savePosition(currentItem.id, player.getCurrentTime(), player.getDuration());
+      var now = playerNow();
+      if (now) {
+        savePosition(currentItem.id, now.t, now.d);
+      }
     }
+    flushHistory();
+    flushPositions();
     YTU.latest("watch");
+    commentsFor = null;
+    clearTimeout(upNextTimer);
+    upNextTimer = null;
+    upNextGen += 1;
+    upNextPainting = false;
+    clearTimeout(feedHoldTimer);
+    paintGen.upnext = (paintGen.upnext || 0) + 1;
     if (player && playerReady) {
-      player.stopVideo();
+      try {
+        if (opts.keepFrame) {
+          player.pauseVideo();
+        } else {
+          player.stopVideo();
+        }
+      } catch (err) {}
     }
     currentItem = null;
     removeClass(document.body, "watching");
     removeClass(document.body, "mini");
+    removeClass(document.body, "feed-hold");
     show("watch", false);
     if (reloadWhenIdle) {
       location.reload();
@@ -1390,7 +1617,9 @@
     }
     var key = settings.topic;
     if (shorts.length && shortsLoadedFor === key) {
-      showShort(shortIndex);
+      if (!shortsMode) {
+        showShort(shortIndex);
+      }
       return;
     }
     var isLatest = YTU.latest("shorts");
@@ -1429,10 +1658,10 @@
     byId("shorts-author").textContent = item.author ? "@" + item.author.replace(/\s+/g, "") : "";
     byId("shorts-title").textContent = item.title || "";
     YTU.toggleClass(byId("shorts-like"), "is-on", !!shortRated[item.id]);
-    pushUnique("ytHistory", item, MAX_HISTORY);
     shortsMode = true;
     addClass(document.body, "shorts-playing");
     loadIntoPlayer(item.id, 0);
+    rememberWatch(item);
   }
 
   function wireShorts() {
@@ -1687,8 +1916,8 @@
     });
     on("comments-open", "click", openComments);
     on("comments-more", "click", function () {
-      if (currentItem && commentsNext) {
-        loadComments(currentItem.id, commentsNext, YTU.latest("watch-comments"));
+      if (currentItem && commentsNext && commentsFor) {
+        loadComments(currentItem.id, commentsNext, commentsFor);
       }
     });
     on("autoplay", "change", function () {
@@ -1725,6 +1954,10 @@
       if (window.confirm("Clear watch history on this iPad?")) {
         YTU.store("ytHistory", []);
         positions = {};
+        clearTimeout(posTimer);
+        posTimer = null;
+        historyItem = null;
+        clearTimeout(historyTimer);
         YTU.store("ytPos", positions);
         paintYou();
       }
@@ -1755,6 +1988,12 @@
     paintChips();
     paintAccount();
     setTab("home", true);
-    setTimeout(YTU.cachePrune, 5000);
+    window.addEventListener("pagehide", function () {
+      flushHistory();
+      flushPositions();
+    });
+    // Player script after the feed has had time to paint; cache tidy much later.
+    setTimeout(ensureApi, 4000);
+    setTimeout(YTU.cachePrune, 20000);
   });
 })();

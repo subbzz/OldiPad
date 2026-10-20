@@ -172,13 +172,32 @@ ol.steps li {
   margin-top: 12px;
 }
 
-.player-wrap iframe {
+.player-wrap iframe,
+.player-wrap video {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   border: 0;
+  background: #000;
+}
+
+.result {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  color: #1c1c1e;
+  background: #f2f2f7;
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.home-add {
+  background: #fff4cc;
 }
 
 .links a {

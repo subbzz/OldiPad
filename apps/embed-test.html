@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Embed test</title>
+  <style>
+    body { font-family: -apple-system, Helvetica, sans-serif; margin: 16px; }
+    #player { width: 100%; max-width: 720px; }
+    #log { font-size: 14px; white-space: pre-wrap; background: #f2f2f2; padding: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Can this iPad play YouTube's player?</h1>
+  <p>Tap play in the box below. If the video plays, the no-Mac version will work.</p>
+  <div id="player"></div>
+  <p id="log"></p>
+  <script>
+    var log = document.getElementById("log");
+    function say(text) {
+      log.textContent += text + "\n";
+    }
+    say("UA: " + navigator.userAgent);
+    window.onerror = function (msg) {
+      say("Page error: " + msg);
+    };
+    function onYouTubeIframeAPIReady() {
+      say("YouTube player script loaded.");
+      new YT.Player("player", {
+        width: "720",
+        height: "405",
+        videoId: "dQw4w9WgXcQ",
+        playerVars: { playsinline: 1, rel: 0 },
+        events: {
+          onReady: function () {
+            say("Player ready.");
+          },
+          onStateChange: function (e) {
+            say("State: " + ({ "-1": "unstarted", 0: "ended", 1: "PLAYING", 2: "paused", 3: "buffering", 5: "cued" })[e.data]);
+          },
+          onError: function (e) {
+            say("Player error code " + e.data);
+          },
+        },
+      });
+    }
+    setTimeout(function () {
+      if (!window.YT || !window.YT.Player) {
+        say("YouTube player script did not load after 15 s.");
+      }
+    }, 15000);
+  </script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>

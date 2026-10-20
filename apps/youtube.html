@@ -1,53 +1,278 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" manifest="cache.appcache">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="YouTube">
+  <meta name="format-detection" content="telephone=no">
   <title>YouTube</title>
   <link rel="apple-touch-icon" href="icons/youtube.png">
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/youtube.css">
 </head>
-<body>
-  <div class="wrap">
-    <a class="back" href="index.html">Launcher</a>
-    <header>
-      <h1>YouTube</h1>
-      <p>The App Store app no longer updates on iOS 12. Use the mobile site, or paste a link below.</p>
-    </header>
-
-    <button type="button" class="btn btn-block btn-red" id="open-youtube">Open YouTube</button>
-
-    <div class="panel">
-      <h2>Search</h2>
-      <form id="search-form" action="https://m.youtube.com/results" method="get">
-        <label for="q">Find a video</label>
-        <div class="row">
-          <input id="q" name="search_query" type="search" placeholder="Search YouTube" autocorrect="off">
-          <button type="submit">Go</button>
-        </div>
-      </form>
+<body class="yt-app">
+  <header class="yt-top">
+    <div id="brand" class="yt-logo">
+      <span class="yt-playbtn"></span>
+      <span class="yt-word">YouTube</span>
     </div>
+    <form id="search-form" class="yt-search-bar hidden" action="#" method="get">
+      <button type="button" id="search-back" class="yt-icon-btn" aria-label="Back">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></svg>
+      </button>
+      <input id="q" name="search_query" type="search" placeholder="Search YouTube" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button type="button" id="search-clear" class="yt-icon-btn hidden" aria-label="Clear">
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
+      </button>
+    </form>
+    <button type="button" id="search-open" class="yt-icon-btn" aria-label="Search">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0C7 14 5 12 5 9.5S7 5 9.5 5 14 7 14 9.5 12 14 9.5 14z"/></svg>
+    </button>
+    <button type="button" id="header-you" class="yt-icon-btn yt-header-avatar" aria-label="You"></button>
+  </header>
 
-    <div class="panel">
-      <h2>Play a link</h2>
-      <form id="play-form" action="#">
-        <label for="url">Paste a youtube.com or youtu.be URL</label>
-        <div class="row">
-          <input id="url" type="url" placeholder="https://youtu.be/..." autocorrect="off" autocapitalize="off">
-          <button type="submit">Play</button>
-        </div>
-        <p id="url-error" class="error hidden"></p>
-      </form>
-      <div id="player-wrap" class="player-wrap hidden">
-        <iframe id="player" title="YouTube video" allowfullscreen></iframe>
+  <div id="suggest" class="yt-suggest hidden"></div>
+
+  <p id="status" class="yt-status"></p>
+
+  <section id="view-home" class="yt-view">
+    <div id="chips" class="yt-chips"></div>
+    <div id="home-feed" class="yt-feed"></div>
+  </section>
+
+  <section id="view-subs" class="yt-view hidden">
+    <div id="subs-out" class="yt-empty hidden">
+      <strong>Don't miss new videos</strong>
+      <p>Sign in to see updates from your favourite YouTube channels.</p>
+      <button type="button" class="yt-signin-btn" data-action="sign-in">Sign in</button>
+    </div>
+    <div id="subs-channels" class="yt-channel-strip"></div>
+    <div id="subs-feed" class="yt-feed"></div>
+  </section>
+
+  <section id="view-shorts" class="yt-view yt-shorts hidden">
+    <video id="shorts-player" playsinline webkit-playsinline loop preload="none"></video>
+    <div id="shorts-tap" class="yt-shorts-tap"><span>Tap to play</span></div>
+    <div class="yt-shorts-info">
+      <div id="shorts-author" class="yt-shorts-author"></div>
+      <div id="shorts-title" class="yt-shorts-title"></div>
+    </div>
+    <div class="yt-shorts-side">
+      <button type="button" id="shorts-like" aria-label="Like">
+        <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.3l1-4.6v-.3c0-.4-.2-.8-.4-1.1L14.2 1 7.6 7.6C7.2 7.9 7 8.4 7 9v10c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7.1c.1-.2.2-.5.2-.7v-2z"/></svg>
+        <span>Like</span>
+      </button>
+      <button type="button" id="shorts-share" aria-label="Share">
+        <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg>
+        <span>Share</span>
+      </button>
+      <button type="button" id="shorts-prev" aria-label="Previous">
+        <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 15.4L12 10.8l4.6 4.6L18 14l-6-6-6 6z"/></svg>
+      </button>
+      <button type="button" id="shorts-next" aria-label="Next">
+        <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6L12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <section id="view-you" class="yt-view yt-you hidden">
+    <div id="you-out" class="yt-you-card">
+      <div class="yt-you-copy">
+        <strong>You're not signed in</strong>
+        <p>Sign in with Google to like videos, comment, subscribe, and see your playlists.</p>
       </div>
+      <button type="button" class="yt-signin-btn" data-action="sign-in">Sign in</button>
+    </div>
+    <div id="you-in" class="yt-you-card hidden">
+      <div id="you-avatar" class="yt-avatar yt-avatar-lg"></div>
+      <div class="yt-you-copy">
+        <strong id="you-name">You</strong>
+        <p>Signed in with Google</p>
+      </div>
+      <button type="button" id="sign-out" class="yt-text-btn">Sign out</button>
     </div>
 
-    <p class="note links">Share &rarr; Add to Home Screen to keep this as an app. The home-screen profile can also pin <a href="https://m.youtube.com">m.youtube.com</a> directly.</p>
+    <div class="yt-shelf-head">
+      <h2>History</h2>
+      <button type="button" class="yt-text-btn" data-open="history">View all</button>
+    </div>
+    <div id="you-history" class="yt-shelf"></div>
+
+    <div class="yt-menu">
+      <button type="button" data-open="watch-later">
+        <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7z"/></svg>
+        <span>Watch later</span>
+      </button>
+      <button type="button" data-open="liked" class="yt-needs-sign">
+        <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.3l1-4.6v-.3c0-.4-.2-.8-.4-1.1L14.2 1 7.6 7.6C7.2 7.9 7 8.4 7 9v10c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7.1c.1-.2.2-.5.2-.7v-2z"/></svg>
+        <span>Liked videos</span>
+      </button>
+    </div>
+
+    <div id="you-playlists-wrap" class="hidden">
+      <div class="yt-shelf-head"><h2>Playlists</h2></div>
+      <div id="you-playlists" class="yt-menu"></div>
+    </div>
+
+    <div class="yt-shelf-head"><h2>Settings</h2></div>
+    <div class="yt-settings">
+      <label class="yt-setting">
+        <span>Play in HD when possible<small>Turn off to save data (360p)</small></span>
+        <input id="set-hd" type="checkbox" checked>
+      </label>
+      <label class="yt-setting">
+        <span>Autoplay next video</span>
+        <input id="set-autoplay" type="checkbox" checked>
+      </label>
+      <label class="yt-setting">
+        <span>Home topic<small>Used for Home and Shorts</small></span>
+        <input id="set-topic" type="text" maxlength="40" autocorrect="off">
+      </label>
+      <button type="button" id="clear-history" class="yt-text-btn">Clear watch history</button>
+    </div>
+
+    <form id="play-form" class="yt-play-form" action="#">
+      <label for="url">Play a YouTube link</label>
+      <div class="row">
+        <input id="url" type="url" placeholder="https://youtu.be/..." autocorrect="off" autocapitalize="off">
+        <button type="submit">Play</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="view-list" class="yt-view hidden">
+    <div class="yt-list-head">
+      <button type="button" id="list-back" class="yt-icon-btn" aria-label="Back">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></svg>
+      </button>
+      <h1 id="list-title"></h1>
+    </div>
+    <div id="list-header"></div>
+    <div id="list-feed" class="yt-feed"></div>
+  </section>
+
+  <div id="watch" class="yt-watch hidden">
+    <div class="yt-watch-stage">
+      <div class="yt-watch-main">
+        <div id="player-wrap" class="yt-player">
+          <video id="player" controls playsinline webkit-playsinline preload="none"></video>
+          <button type="button" id="watch-collapse" class="yt-collapse" aria-label="Minimise">
+            <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.4 8.6L12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>
+          </button>
+        </div>
+        <div class="yt-mini-bar">
+          <button type="button" id="mini-open" class="yt-mini-text">
+            <span id="mini-title"></span>
+            <span id="mini-author"></span>
+          </button>
+          <button type="button" id="mini-toggle" class="yt-icon-btn" aria-label="Play or pause">
+            <svg id="mini-play-icon" width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button type="button" id="mini-close" class="yt-icon-btn" aria-label="Close">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
+          </button>
+        </div>
+        <div class="yt-watch-meta">
+          <h1 id="now-playing"></h1>
+          <button type="button" id="watch-sub" class="yt-watch-sub"></button>
+          <div id="watch-desc" class="yt-desc hidden"></div>
+          <div class="yt-actions">
+            <button type="button" id="btn-like">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.3l1-4.6v-.3c0-.4-.2-.8-.4-1.1L14.2 1 7.6 7.6C7.2 7.9 7 8.4 7 9v10c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7.1c.1-.2.2-.5.2-.7v-2z"/></svg>
+              <span id="like-count">Like</span>
+            </button>
+            <button type="button" id="btn-dislike" aria-label="Dislike">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15 3H6c-.8 0-1.5.5-1.8 1.2l-3 7.1c-.1.2-.2.5-.2.7v2c0 1.1.9 2 2 2h6.3l-1 4.6v.3c0 .4.2.8.4 1.1L9.8 23l6.6-6.6c.4-.4.6-.9.6-1.4V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg>
+            </button>
+            <button type="button" id="btn-share">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg>
+              <span>Share</span>
+            </button>
+            <button type="button" id="btn-save">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14 10H2v2h12v-2zm0-4H2v2h12V6zm4 8v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zM2 16h8v-2H2v2z"/></svg>
+              <span>Save</span>
+            </button>
+            <button type="button" id="btn-quality">
+              <span id="quality-label">HD</span>
+            </button>
+            <button type="button" id="btn-pip" class="hidden">
+              <span>Picture in picture</span>
+            </button>
+          </div>
+          <div class="yt-channel-row">
+            <button type="button" id="channel-open" class="yt-channel-open">
+              <span id="channel-avatar" class="yt-avatar"></span>
+              <span class="yt-channel-text">
+                <span id="channel-name">Channel</span>
+                <span id="channel-subs" class="yt-card-sub"></span>
+              </span>
+            </button>
+            <button type="button" id="btn-sub" class="yt-sub">Subscribe</button>
+          </div>
+        </div>
+        <div class="yt-comments">
+          <div class="yt-comments-head">Comments <span id="comment-count"></span></div>
+          <div id="comment-box" class="yt-comment-box hidden">
+            <span id="comment-me" class="yt-avatar yt-avatar-sm"></span>
+            <input id="comment-text" type="text" placeholder="Add a comment…" maxlength="2000">
+            <button type="button" id="comment-send" class="yt-text-btn">Post</button>
+          </div>
+          <div id="comments"></div>
+          <button type="button" id="comments-more" class="yt-text-btn hidden">Show more comments</button>
+        </div>
+      </div>
+      <aside class="yt-upnext" aria-label="Up next">
+        <div class="yt-upnext-head">
+          <span>Up next</span>
+          <label class="yt-autoplay">
+            Autoplay
+            <input id="autoplay" type="checkbox" checked>
+          </label>
+        </div>
+        <div id="upnext"></div>
+      </aside>
+    </div>
   </div>
+
+  <div id="sign-sheet" class="yt-sheet hidden">
+    <div class="yt-sheet-card">
+      <h2>Sign in with Google</h2>
+      <div id="sign-body"></div>
+      <button type="button" id="sign-cancel" class="yt-text-btn">Cancel</button>
+    </div>
+  </div>
+
+  <div id="action-sheet" class="yt-sheet hidden">
+    <div class="yt-sheet-card yt-sheet-bottom">
+      <h2 id="action-title"></h2>
+      <div id="action-body"></div>
+      <button type="button" id="action-cancel" class="yt-text-btn">Cancel</button>
+    </div>
+  </div>
+
+  <div id="toast" class="yt-toast hidden"></div>
+
+  <nav class="yt-tabs" aria-label="YouTube">
+    <button type="button" class="is-on" data-tab="home">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      Home
+    </button>
+    <button type="button" data-tab="shorts">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.8 10.1l-1.2-.5 1.1-.6c1.8-1 2.5-3.3 1.5-5.1s-3.3-2.5-5.1-1.5l-8.1 4.3C4.2 7.6 3.3 9 3.4 10.6s1 2.9 2.4 3.4l1.2.5-1.1.6c-1.8 1-2.5 3.3-1.5 5.1s3.3 2.5 5.1 1.5l8.1-4.3c1.8-1 2.7-2.4 2.6-4s-1-2.9-2.4-3.3zM10 15V9l5 3-5 3z"/></svg>
+      Shorts
+    </button>
+    <button type="button" data-tab="subs">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 8H4V6h16v2zm-2-6H6v2h12V2zm4 10v8c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2zm-6 4l-6-3.3v6.5L16 16z"/></svg>
+      Subscriptions
+    </button>
+    <button type="button" data-tab="you">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8V22h19.2v-2.8c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+      You
+    </button>
+  </nav>
+
+  <script src="js/yt-lib.js"></script>
   <script src="js/youtube.js"></script>
 </body>
 </html>

@@ -1,0 +1,20 @@
+CACHE MANIFEST
+# server.py adds a "# rev" line from these files' contents, so iPads pick up changes.
+
+index.html
+youtube.html
+whatsapp.html
+css/app.css
+css/youtube.css
+js/yt-lib.js
+js/youtube.js
+icons/launcher.png
+icons/youtube.png
+icons/whatsapp.png
+icons/gmail.png
+icons/maps.png
+icons/news.png
+icons/weather.png
+
+NETWORK:
+*

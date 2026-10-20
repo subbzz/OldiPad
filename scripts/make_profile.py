@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import plistlib
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -33,35 +34,76 @@ def webclip(label: str, url: str, icon_name: str, ident: str) -> dict:
     }
 
 
+def default_base() -> str:
+    """http://<this Mac>.local:8080, which keeps working when the Mac's IP changes."""
+    try:
+        host = subprocess.run(
+            ["scutil", "--get", "LocalHostName"], text=True, capture_output=True, check=True
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        host = "MacBook-Pro"
+    return "http://%s.local:8080" % host
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", required=True, help="http://LAN_IP:PORT")
+    parser.add_argument("--base-url", default="", help="http://HOST.local:PORT of serve.sh")
     args = parser.parse_args()
-    base = args.base_url.rstrip("/")
+    base = (args.base_url or default_base()).rstrip("/")
+
+    youtube_url = base + "/apps/youtube.html"
+    clips = [
+        webclip(
+            "YouTube",
+            youtube_url,
+            "youtube.png",
+            "com.oldipad.webclip.youtube",
+        ),
+        webclip(
+            "WhatsApp",
+            "https://web.whatsapp.com",
+            "whatsapp.png",
+            "com.oldipad.webclip.whatsapp",
+        ),
+        webclip(
+            "Gmail",
+            "https://mail.google.com",
+            "gmail.png",
+            "com.oldipad.webclip.gmail",
+        ),
+        webclip(
+            "Maps",
+            "https://maps.google.com",
+            "maps.png",
+            "com.oldipad.webclip.maps",
+        ),
+        webclip(
+            "ABC News",
+            "https://www.abc.net.au/news",
+            "news.png",
+            "com.oldipad.webclip.news",
+        ),
+        webclip(
+            "BOM Weather",
+            "https://www.bom.gov.au",
+            "weather.png",
+            "com.oldipad.webclip.weather",
+        ),
+    ]
+    clips.insert(
+        0,
+        webclip(
+            "Launcher",
+            base + "/apps/",
+            "launcher.png",
+            "com.oldipad.webclip.launcher",
+        ),
+    )
 
     payload = {
-        "PayloadContent": [
-            webclip(
-                "Launcher",
-                base + "/apps/",
-                "launcher.png",
-                "com.oldipad.webclip.launcher",
-            ),
-            webclip(
-                "YouTube",
-                "https://m.youtube.com",
-                "youtube.png",
-                "com.oldipad.webclip.youtube",
-            ),
-            webclip(
-                "WhatsApp",
-                "https://web.whatsapp.com",
-                "whatsapp.png",
-                "com.oldipad.webclip.whatsapp",
-            ),
-        ],
+        "PayloadContent": clips,
         "PayloadDisplayName": "Old iPad Apps",
-        "PayloadDescription": "YouTube, WhatsApp, and the local launcher for iOS 12.5.7",
+        "PayloadDescription": "Home screen web apps for iOS 12.5.7",
         "PayloadIdentifier": "com.oldipad.webclips",
         "PayloadOrganization": "Old iPad",
         "PayloadRemovalDisallowed": False,
